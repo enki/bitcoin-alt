@@ -9,6 +9,7 @@ class ProtocolHelper:
       self.buffer = b''
       self.address = address
       self.socket = socket.socket()
+      self.checksum = hashlib.sha256()
   
   def buffered_read(self,length,retry=3):
     try:
@@ -56,33 +57,43 @@ class ProtocolHelper:
       checksum = self.buffered_read(4)
     else:
       checksum = None
-      
-    payload = self.buffered_read(length)
     
-    if checksum:
-      #TODO verify this works
-      if not hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] == checksum:
-        raise Exception("checksum mismatch")
-    
-    parsed_payload = {'version':self.parse_version}[command](payload)
+    parsed_payload = {'version':self.parse_version}[command]()
     
     return (command,parsed_payload)
     
-  def parse_version(self,payload):
-    version,services,timestamp = struct.unpack('<IQQ',payload[:struct.calcsize('<IQQ')])
-    payload = payload[struct.calcsize('<IQQ'):]
+  def buffered_checked_read(self,length):
+    buf = self.buffered_read(length)
+    self.checksum.update(buf)
     
-    addr_me = addr_you = payload[:26]
-    payload = payload[26:]
+  def buffered_read_delim(self,delim):
+    buf = b''
+    while not buf.endswith(delim):
+      buf += self.buffered_read(1)
+    return buf
     
+  def unpack_stream(self,format):
+    return struct.unpack(format,self.buffered_read(struct.calcsize(format)))
+    
+  def parse_version(self):  
+    version,services,timestamp = self.unpack_stream('<IQQ')
+    addr_me = self.buffered_read(26)
+    
+    ret = {'version':version,'services':services,'timestamp':timestamp,'addr_me':addr_me}
     if version < 106:
-      return {'version':version,'services':services,'timestamp':timestamp,'addr_me':addr_me}
+      return ret
     else:
-      addr_you = payload[:26]
-      payload = payload[26:]
+      addr_you = self.buffered_read(26)
+      nonce = self.buffered_read(8)
+      sub_version_num = self.buffered_read_delim(b'\x00')
       
-      nonce = payload[:8]
-      payload = payload[8:]
+      ret.update({'addr_you':addr_you,'nonce':nonce,'sub_version_num':sub_version_num})
       
+      if version < 209:
+        return ret
+      else:
+        start_height = self.unpack_stream('<I')
+        ret.update({'start_height':start_height})
+    return ret
     
     
