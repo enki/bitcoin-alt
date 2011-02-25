@@ -17,6 +17,7 @@ class Peer:
     
   def poll(self):
     command,payload = self.helper.read_message()
+    print(command,payload)
     {'version':self.handle_version,
     'verack':self.handle_verack,
     }[command](payload)

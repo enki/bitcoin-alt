@@ -57,6 +57,16 @@ class ProtocolHelper:
     packed += struct.pack('>H',port)
     return packed
     
+  def read_inv_vect(self):
+    inv_type = self.stream.read_uint32()
+    inv_hash = self.stream.buffered_read(32)
+    return (inv_type,inv_hash)
+  
+  def pack_inv_vect(self,inv_type,inv_hash):
+    packed = struct.pack('<I',inv_type)
+    packed += inv_hash
+    return packed
+    
   def parse_version(self):
     version = self.stream.read_uint32()
     services = self.stream.read_uint64()
@@ -115,10 +125,21 @@ class ProtocolHelper:
     for x in range(count):
       if self.version >= 31402:
         timestamp = self.stream.buffered_read(4)
-        node_addr = self.stream.buffered_read(26)
+        node_addr = self.read_addr()
+        addrs.append({'timestamp':timestamp,'node_addr':node_addr})
+      else
+        node_addr = self.read_addr()
+        addrs.append({'node_addr':node_addr})
     if not self.stream.check_checksum():
       raise Exception("checksum failed")
     return addrs
     
-    
+  def parse_inv(self):
+    self.stream.start_checksum()
+    count = self.stream.read_var_uint()
+    invs = []
+    for x in range(count):
+      invs
+    if not self.stream.check_checksum():
+      raise Exception("checksum failed")
     
