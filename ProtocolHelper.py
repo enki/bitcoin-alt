@@ -6,6 +6,8 @@ from StreamHelper import StreamHelper
 
 class ProtocolHelper:
   magic = b'\xF9\xBE\xB4\xD9'
+  my_version = 32002
+  services = 1
 
   def __init__(self,address):
       self.address = address
@@ -34,6 +36,7 @@ class ProtocolHelper:
       'getdata':self.parse_inv,
       'getblocks':self.parse_getblocks,
       'getheaders':self.parse_getblocks,
+      'tx':self.parse_tx,
       }[command]()
     except KeyError as e:
       print(e)
@@ -168,6 +171,13 @@ class ProtocolHelper:
       payload += pack_inv_vect(inv)
     self.send_message('inv',payload)
     
+  def send_getdata(self,invs):
+    payload = b''
+    payload += b'\xff'+struct.pack('<Q',len(addrs))
+    for inv in invs:
+      payload += pack_inv_vect(inv)
+    self.send_message('getdata',payload)
+    
   def parse_getblocks(self):
     self.stream.start_checksum()
     version = self.stream.read_uint32()
@@ -180,5 +190,54 @@ class ProtocolHelper:
       raise Exception("checksum failed")
     return {'version':version,'starts':starts,'stop':stop}
     
-  def send_getblocks(self):
+  def send_getblocks(self,starts,stop):
+    payload = b''
+    payload += struct.pack('<I',self.my_version)
+    payload += b'\xff'+struct.pack('<Q',len(starts))
+    for start in starts:
+      payload += start
+    payload += stop
+    self.send_message('getblocks',payload)
     
+  def send_getheaders(self,starts,stop):
+    payload = b''
+    payload += struct.pack('<I',self.my_version)
+    payload += b'\xff'+struct.pack('<Q',len(starts))
+    for start in starts:
+      payload += start
+    payload += stop
+    self.send_message('getheaders',payload)
+    
+  def parse_outpoint(self):
+    out_hash = self.stream.buffered_read(32)
+    out_index = self.stream.read_uint32()
+    return (out_hash,out_index)
+  
+  def parse_txin(self):
+    outpoint = self.parse_outpoint()
+    script_length = self.stream.read_var_uint()
+    script = self.stream.buffered_read(script_length)
+    sequence = self.stream.read_uint32()
+    return (outpoint,script,sequence)
+    
+  def parse_txout(self):
+    value = self.stream.read_uint64()
+    pk_script_length = self.stream.read_var_uint()
+    pk_script = self.stream.buffered_read(pk_script_length)
+    return (value,pk_script)
+    
+  def parse_tx(self):
+    self.stream.start_checksum()
+    version = self.stream.read_uint32()
+    tx_in_count = self.stream.read_var_uint()
+    tx_ins = []
+    for x in range(tx_in_count):
+      tx_ins.append(self.parse_txin())
+    tx_out_count = self.stream.read_var_uint()
+    tx_outs = []
+    for x in range(tx_out_count):
+      tx_outs.append(self.parse_txout())
+    lock_time = self.stream.read_uint32()
+    if not self.stream.check_checksum(self.checksum):
+      raise Exception("checksum failed")
+    return (tx_ins,tx_outs,lock_time)

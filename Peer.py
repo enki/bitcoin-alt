@@ -4,9 +4,6 @@ import random
 from ProtocolHelper import ProtocolHelper
 
 class Peer:
-  my_version = 32002
-  services = 1
-  
   def __init__(self,address):
     self.helper = ProtocolHelper(address)
     self.nonce = b''
@@ -31,7 +28,7 @@ class Peer:
       print(e,command,payload)
     
   def send_version(self):
-    self.helper.send_version(Peer.my_version,Peer.services,int(time.time()),self.addr_me,self.addr_you,self.nonce,'',110879)
+    self.helper.send_version(self.helper.my_version,self.helper.services,int(time.time()),self.addr_me,self.addr_you,self.nonce,'',110879)
       
   def handle_connect(self,payload):
     pass
