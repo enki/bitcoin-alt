@@ -2,98 +2,123 @@ import socket
 import struct
 import hashlib
 
+from StreamHelper import StreamHelper
+
 class ProtocolHelper:
   magic = b'\xF9\xBE\xB4\xD9'
 
   def __init__(self,address):
-      self.buffer = b''
       self.address = address
       self.socket = socket.socket()
-      self.checksum = hashlib.sha256()
-  
-  def buffered_read(self,length,retry=3):
-    try:
-      while len(self.buffer) < length:
-        self.buffer += self.socket.recv(4096)
-      ret = self.buffer[:length]
-      self.buffer = self.buffer[length:]
-      return ret
-    except socket.error as e:
-      if retry > 0:
-        self.socket.connect(self.address)
-        return self.buffered_read(length,retry-1)
-      else:
-        raise e
-  
-  def read_var_uint(self):
-    first_byte = self.buffered_read(1)[0]
-    if first_byte < 0xfd:
-      return first_byte
-    else:
-      length,format = {0xfd: (2, '<H'), 0xfe: (4, '<I'), 0xff: (8, '<L')}[first_byte]
-      packed = self.buffered_read(length)
-      return struct.unpack(format,packed)[0]
-  
-  def write_var_uint(self,integer):
-    self.socket.send(b'\xff'+struct.pack('<L',integer))
-  
-  def read_string(self):
-    length = self.read_var_uint()
-    return self.buffered_read(length)
-  
-  def write_string(self,string):
-    write_var_uint(len(string))
-    self.socket.send(string)
+      self.socket.connect(address)
+      self.stream = StreamHelper(self.socket)
     
-  def read_message_header(self):
-    magic = self.buffered_read(4)
+  def read_message(self):
+    magic = self.stream.buffered_read(4)
     if magic != self.magic:
       raise Exception("Magic value wrong")
-      
-    command = self.buffered_read(12).decode("ascii").strip('\x00')
-    length = struct.unpack('<I',self.buffered_read(4))[0]
+    
+    command = self.stream.read_fixed_string(12)
+    length = self.stream.read_uint32()
     
     if not (command == "version" or command == "verack"):
-      checksum = self.buffered_read(4)
+      self.checksum = self.stream.buffered_read(4)
     else:
-      checksum = None
+      self.checksum = None
     
-    parsed_payload = {'version':self.parse_version}[command]()
+    parsed_payload = {'version':self.parse_version,
+    'verack':self.parse_verack,
+    'addr':self.parse_addr,
+    }[command]()
     
     return (command,parsed_payload)
     
-  def buffered_checked_read(self,length):
-    buf = self.buffered_read(length)
-    self.checksum.update(buf)
+  def send_message(self,command,payload,magic=b'\xF9\xBE\xB4\xD9',length=None,checksum=None):
+    self.stream.socket.sendall(magic)
+    self.stream.write_fixed_string(command,12)
+    if not length:
+      length = len(payload)
+    self.stream.write_uint32(length)
+    if not (command == "version" or command == "verack"):
+      if not checksum:
+        checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+      self.stream.socket.sendall(checksum)
+    self.stream.socket.sendall(payload)
     
-  def buffered_read_delim(self,delim):
-    buf = b''
-    while not buf.endswith(delim):
-      buf += self.buffered_read(1)
-    return buf
+  def read_addr(self):
+    services = self.stream.read_uint64()
+    addr = self.stream.buffered_read(16)
+    port = self.stream.read_uint16(False)
+    return (services,addr,port)
     
-  def unpack_stream(self,format):
-    return struct.unpack(format,self.buffered_read(struct.calcsize(format)))
+  def pack_addr(self,services,addr,port):
+    packed = struct.pack('<Q',services)
+    packed += addr
+    packed += struct.pack('>H',port)
+    return packed
     
-  def parse_version(self):  
-    version,services,timestamp = self.unpack_stream('<IQQ')
-    addr_me = self.buffered_read(26)
+  def parse_version(self):
+    version = self.stream.read_uint32()
+    services = self.stream.read_uint64()
+    timestamp = self.stream.read_uint64()
+    
+    self.version = version
+    
+    addr_me = self.stream.buffered_read(26)
     
     ret = {'version':version,'services':services,'timestamp':timestamp,'addr_me':addr_me}
     if version < 106:
       return ret
     else:
-      addr_you = self.buffered_read(26)
-      nonce = self.buffered_read(8)
-      sub_version_num = self.buffered_read_delim(b'\x00')
+      addr_you = self.read_addr()
+      nonce = self.stream.buffered_read(8)
+      sub_version_num = self.stream.read_null_string()
       
       ret.update({'addr_you':addr_you,'nonce':nonce,'sub_version_num':sub_version_num})
       
       if version < 209:
         return ret
       else:
-        start_height = self.unpack_stream('<I')
+        start_height = self.stream.read_uint32()
         ret.update({'start_height':start_height})
     return ret
+    
+  def send_version(self,version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
+    payload = b''
+    payload = struct.pack('<IQQ',version,services,timestamp)
+    
+    payload += self.pack_addr(*addr_me)
+    
+    if version < 106:
+      self.send_message('version',payload)
+    else:
+      payload += self.pack_addr(*addr_you)
+      payload += nonce
+      payload += sub_version_num.encode('ascii') + b'\x00'
+      
+      if version < 209:
+        self.send_message('version',payload)
+      else:
+        payload += struct.pack('<I',start_height)
+        self.send_message('version',payload)
+    
+  def parse_verack(self):
+    return {}
+    
+  def send_verack(self):
+    self.send_message('verack',b'')
+    
+  def parse_addr(self):
+    self.stream.start_checksum()
+    count = self.read_var_uint()
+    addrs = []
+    for x in range(count):
+      if self.version >= 31402:
+        timestamp = self.stream.buffered_read(4)
+        node_addr = self.stream.buffered_read(26)
+    if not self.stream.check_checksum():
+      raise Exception("checksum failed")
+    return addrs
+    
     
     
