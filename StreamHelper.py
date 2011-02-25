@@ -107,6 +107,6 @@ class StreamHelper:
     self.checksum = hashlib.sha256()
     
   def check_checksum(self,checksum):
-    ret = hashlib.sha256(self.checksum.digest())[:4] == checksum
+    ret = hashlib.sha256(self.checksum.digest()).digest()[:4] == checksum
     self.checksum = None
     return ret

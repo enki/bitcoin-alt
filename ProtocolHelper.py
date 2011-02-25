@@ -9,7 +9,7 @@ class ProtocolHelper:
 
   def __init__(self,address):
       self.address = address
-      self.socket = socket.socket()
+      self.socket = socket.socket(socket.AF_INET6)
       self.socket.connect(address)
       self.stream = StreamHelper(self.socket)
     
@@ -26,10 +26,18 @@ class ProtocolHelper:
     else:
       self.checksum = None
     
-    parsed_payload = {'version':self.parse_version,
-    'verack':self.parse_verack,
-    'addr':self.parse_addr,
-    }[command]()
+    try:
+      parsed_payload = {'version':self.parse_version,
+      'verack':self.parse_verack,
+      'addr':self.parse_addr,
+      'inv':self.parse_inv,
+      'getdata':self.parse_inv,
+      'getblocks':self.parse_getblocks,
+      'getheaders':self.parse_getblocks,
+      }[command]()
+    except KeyError as e:
+      print(e)
+      return False
     
     return (command,parsed_payload)
     
@@ -120,26 +128,57 @@ class ProtocolHelper:
     
   def parse_addr(self):
     self.stream.start_checksum()
-    count = self.read_var_uint()
+    count = self.stream.read_var_uint()
     addrs = []
     for x in range(count):
       if self.version >= 31402:
-        timestamp = self.stream.buffered_read(4)
+        timestamp = self.stream.read_uint32(4)
         node_addr = self.read_addr()
         addrs.append({'timestamp':timestamp,'node_addr':node_addr})
-      else
+      else:
         node_addr = self.read_addr()
         addrs.append({'node_addr':node_addr})
-    if not self.stream.check_checksum():
+    if not self.stream.check_checksum(self.checksum):
       raise Exception("checksum failed")
     return addrs
+    
+  def send_addr(self,addrs):
+    payload = b''
+    payload += b'\xff'+struct.pack('<Q',len(addrs))
+    if self.version >= 31402:
+      payload += struct.pack('<I',int(time.time()))
+    for addr in addrs:
+      payload += pack_addr(addr)
+    self.send_message('addr',payload)
     
   def parse_inv(self):
     self.stream.start_checksum()
     count = self.stream.read_var_uint()
     invs = []
     for x in range(count):
-      invs
-    if not self.stream.check_checksum():
+      invs.append(self.read_inv_vect())
+    if not self.stream.check_checksum(self.checksum):
       raise Exception("checksum failed")
+    return invs
+    
+  def send_inv(self,invs):
+    payload = b''
+    payload += b'\xff'+struct.pack('<Q',len(addrs))
+    for inv in invs:
+      payload += pack_inv_vect(inv)
+    self.send_message('inv',payload)
+    
+  def parse_getblocks(self):
+    self.stream.start_checksum()
+    version = self.stream.read_uint32()
+    count = self.stream.read_var_uint()
+    starts = []
+    for x in range(count):
+      starts.append(self.stream.buffered_read(32))
+    stop = self.stream.buffered_read(32)
+    if not self.stream.check_checksum(self.checksum):
+      raise Exception("checksum failed")
+    return {'version':version,'starts':starts,'stop':stop}
+    
+  def send_getblocks(self):
     
