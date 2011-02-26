@@ -175,7 +175,7 @@ class ProtocolHelper:
     payload = b''
     payload += b'\xff'+struct.pack('<Q',len(invs))
     for inv in invs:
-      payload += pack_inv_vect(inv)
+      payload += self.pack_inv_vect(*inv)
     self.send_message('getdata',payload)
     
   def parse_getblocks(self):
