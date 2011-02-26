@@ -162,18 +162,18 @@ class ProtocolHelper:
       invs.append(self.read_inv_vect())
     if not self.stream.check_checksum(self.checksum):
       raise Exception("checksum failed")
-    return invs
+    return {'invs':invs}
     
   def send_inv(self,invs):
     payload = b''
-    payload += b'\xff'+struct.pack('<Q',len(addrs))
+    payload += b'\xff'+struct.pack('<Q',len(invs))
     for inv in invs:
       payload += pack_inv_vect(inv)
     self.send_message('inv',payload)
     
   def send_getdata(self,invs):
     payload = b''
-    payload += b'\xff'+struct.pack('<Q',len(addrs))
+    payload += b'\xff'+struct.pack('<Q',len(invs))
     for inv in invs:
       payload += pack_inv_vect(inv)
     self.send_message('getdata',payload)
@@ -211,8 +211,14 @@ class ProtocolHelper:
   def parse_outpoint(self):
     out_hash = self.stream.buffered_read(32)
     out_index = self.stream.read_uint32()
-    return (out_hash,out_index)
-  
+    return {'out_hash':out_hash,'out_index':out_index}
+    
+  def pack_outpoint(self,out_hash,out_index):
+    payload = b''
+    payload += out_hash
+    payload += struct.pack('<I',out_index)
+    return payload
+
   def parse_txin(self):
     outpoint = self.parse_outpoint()
     script_length = self.stream.read_var_uint()
@@ -220,11 +226,26 @@ class ProtocolHelper:
     sequence = self.stream.read_uint32()
     return (outpoint,script,sequence)
     
+  def pack_txin(self,outpoint,script,sequence):
+    payload = b''
+    payload += self.pack_outpoint(*outpoint)
+    payload += b'\xff'+struct.pack('<Q',len(script))
+    payload += script
+    payload += struct.pack('<I',sequence)
+    return payload
+    
   def parse_txout(self):
     value = self.stream.read_uint64()
     pk_script_length = self.stream.read_var_uint()
     pk_script = self.stream.buffered_read(pk_script_length)
     return (value,pk_script)
+    
+  def pack_txout(self,value,pk_script):
+    payload = b''
+    payload += struct.pack('<Q',value)
+    payload += b'\xff'+struct.pack('<Q',len(pk_script))
+    payload += pk_script
+    return payload
     
   def parse_tx(self):
     self.stream.start_checksum()
@@ -240,4 +261,15 @@ class ProtocolHelper:
     lock_time = self.stream.read_uint32()
     if not self.stream.check_checksum(self.checksum):
       raise Exception("checksum failed")
-    return (tx_ins,tx_outs,lock_time)
+    return {'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
+    
+  def send_tx(self,version,tx_ins,tx_outs,lock_time):
+    payload = b''
+    #payload += self.pack_txin(
+    self.send_message('tx',payload)
+    
+  def parse_getaddr(self):
+    return {}
+    
+  def parse_block(self):
+    return {}

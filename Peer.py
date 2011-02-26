@@ -54,6 +54,7 @@ class Peer:
   def handle_inv(self,payload):
     print("handle_inv")
     print(payload)
+    self.helper.send_getdata(payload)
     pass
   
   def handle_getdata(self,payload):
