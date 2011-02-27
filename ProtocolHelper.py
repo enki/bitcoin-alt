@@ -1,6 +1,8 @@
 import socket
 import struct
 import hashlib
+from MessageReader import MessageReader
+from StreamReader import StreamReader
 
 from StreamHelper import StreamHelper
 
