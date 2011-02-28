@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 import time
 import random
-from ProtocolHelper import ProtocolHelper
+
+import message.reader
+import payload.parser
 
 class Peer:
-  def __init__(self,address):
-    self.helper = ProtocolHelper(address)
+  def __init__(self,address,addr_mr=):
+  
+    self.address = address
+    self.socket = socket.socket(socket.AF_INET6)
+    self.socket.connect(address)
+    
+    self.reader = message.reader(self.socket)
+    self.parser = payload.parser()
+    
     self.nonce = b''
     for x in range(8):
       self.nonce += bytes([random.randrange(256)])
-    self.addr_me = (1,b'\x00'*10+b'\xff'*2+b'\x0A\x2D\x86\x6E',8333)
+      
+    #self.addr_me = (1,b'\x00'*10+b'\xff'*2+b'\x0A\x2D\x86\x6E',8333)
+    self.addr_me = addr_me
     self.addr_you = (1,b'\x00'*10+b'\xff'*2+b'\x0A\x2D\x86\x8B',8333)
     
   def poll(self):

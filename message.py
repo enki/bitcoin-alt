@@ -1,4 +1,7 @@
-class MessageReaders:
+import hashlib
+import struct
+
+class reader:
   magic = b'\xF9\xBE\xB4\xD9'
   
   def __init__(self,s):
@@ -12,26 +15,29 @@ class MessageReaders:
     self.buffer = self.buffer[length:]
     return ret
   
-  def get_message(self):
-    reader = StreamReader.StreamReader(self.socket)
-    magic = stream.read(4)
+  def get(self):
+    magic = self.buffered_read(4)
     if magic != self.magic:
       raise Exception("Magic value wrong")
     
-    command = stream.fixed_string(12)
-    length = stream.uint32()
+    command = self.buffered_read(12).decode('ascii').strip('\x00')
+    length = struct.unpack('<I',self.buffered_read(struct.calcsize('<I')))[0]
     
     if command == "version" or command == "verack":
       checksum = None
     else:
-      checksum = stream.read(4)
+      checksum = self.buffered_read(4)
     
     if length > 100*1000:#100 KB
       raise Exception("Packet is too large")
       
-    payload = stream.read(length)
+    payload = self.buffered_read(length)
     
-    return (command,payload,checksum)
+    if checksum:
+      if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != checksum:
+        raise Exception("checksum failure")
+    
+    return (command,payload)
     
     
     
