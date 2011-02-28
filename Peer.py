@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 import time
 import random
+import socket
 
-import message.reader
-import payload.parser
+import message
+import payload
 
 class Peer:
-  def __init__(self,address,addr_mr=):
+  my_version = 32002
+  my_services = 1
+
+  def __init__(self,address,addr_me=(1,b'\x00'*10+b'\xff'*2+b'\x7F\x00\x00\x01',8333)):
   
     self.address = address
     self.socket = socket.socket(socket.AF_INET6)
@@ -24,7 +28,8 @@ class Peer:
     self.addr_you = (1,b'\x00'*10+b'\xff'*2+b'\x0A\x2D\x86\x8B',8333)
     
   def poll(self):
-    command,payload = self.helper.read_message()
+    command,raw_payload = self.reader.read()
+    payload = self.parser.parse(command,raw_payload)
     
     try:
       {'version':self.handle_version,
@@ -39,7 +44,8 @@ class Peer:
       print(e,command,payload)
     
   def send_version(self):
-    self.helper.send_version(self.helper.my_version,self.helper.services,int(time.time()),self.addr_me,self.addr_you,self.nonce,'',110879)
+    p = payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.nonce,'',110879)
+    message.send(self.socket,b'version',p)
       
   def handle_connect(self,payload):
     pass
@@ -50,7 +56,7 @@ class Peer:
     self.version = payload['version']
     self.nonce = payload['nonce']
     self.services = payload['services']
-    self.helper.send_verack()
+    #self.helper.send_verack()
     
   def handle_verack(self,payload):
     print("handle_verack")
@@ -65,7 +71,7 @@ class Peer:
   def handle_inv(self,payload):
     print("handle_inv")
     print(payload)
-    self.helper.send_getdata(payload['invs'])
+    #self.helper.send_getdata(payload['invs'])
     pass
   
   def handle_getdata(self,payload):

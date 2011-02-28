@@ -1,5 +1,87 @@
 import struct
 
+class buffer_builder:
+  def __init__(self):
+    self.buffer = b''
+    
+  def write(self,buf):
+    self.buffer += buf
+  
+  def pack(self,format,args):
+    self.write(struct.pack(format,*args))
+    
+  def uint8(self,i,little_endian=True):
+    if little_endian:
+      format = '<B'
+    else:
+      format = '>B'
+    self.pack(format,(i,))
+
+  def uint16(self,i,little_endian=True):
+    if little_endian:
+      format = '<H'
+    else:
+      format = '>H'
+    self.pack(format,(i,))
+    
+  def uint32(self,i,little_endian=True):
+    if little_endian:
+      format = '<I'
+    else:
+      format = '>I'
+    self.pack(format,(i,))
+    
+  def uint64(self,i,little_endian=True):
+    if little_endian:
+      format = '<Q'
+    else:
+      format = '>Q'
+    self.pack(format,(i,))
+  
+  def var_uint(self,i):
+    self.write(b'\xff')
+    self.pack('<Q',(i,))
+  
+  def string(self,s):
+    self.var_uint(len(s))
+    self.write(s)
+    
+  def null_string(self,s):
+    self.write(s)
+    self.write(b'\x00')
+    
+  def fixed_string(self,s,length):
+    if len(s) > length:
+      raise Exception("string too long")
+    self.write(s)
+    self.write(b'\x00'*(length-len(s)))
+    
+  def addr(self,services,addr,port):
+    self.uint64(services)
+    self.write(addr)
+    self.uint16(port,little_endian=False)
+    
+def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
+  b = buffer_builder()
+  b.uint32(version)
+  b.uint64(services)
+  b.uint64(timestamp)
+  
+  b.addr(*addr_me)
+  
+  if version < 106:
+    return b.buffer
+  else:
+    b.addr(*addr_you)
+    b.write(nonce)
+    b.null_string(sub_version_num.encode('ascii'))
+    
+    if version < 209:
+      return b.buffer
+    else:
+      b.uint32(start_height)
+      return b.buffer
+
 class buffer_parser:
   def __init__(self,buf):
     self.buffer = buf
@@ -81,7 +163,7 @@ class parser:
       'getblocks':self.parse_getblocks,
       'getheaders':self.parse_getblocks,
       'tx':self.parse_tx,
-      }[command](payload)
+      }[command]()
     except KeyError as e:
       print(e)
       return False
@@ -111,7 +193,7 @@ class parser:
     if version < 106:
       return ret
     else:
-      addr_you = self.addr()
+      addr_you = self.read_addr()
       nonce = self.helper.read(8)
       sub_version_num = self.helper.null_string()
       
