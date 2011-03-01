@@ -19,17 +19,16 @@ class Peer:
     self.reader = message.reader(self.socket)
     self.parser = payload.parser()
     
-    self.nonce = b''
+    self.my_nonce = b''
     for x in range(8):
-      self.nonce += bytes([random.randrange(256)])
-      
-    #self.addr_me = (1,b'\x00'*10+b'\xff'*2+b'\x0A\x2D\x86\x6E',8333)
+      self.my_nonce += bytes([random.randrange(256)])
+    
     self.addr_me = addr_me
     self.addr_you = (1,b'\x00'*10+b'\xff'*2+b'\x0A\x2D\x86\x8B',8333)
     
   def poll(self):
     command,raw_payload = self.reader.read()
-    payload = self.parser.parse(command,raw_payload)
+    p = self.parser.parse(command,raw_payload)
     
     try:
       {'version':self.handle_version,
@@ -39,92 +38,96 @@ class Peer:
       'getdata':self.handle_getdata,
       'getblocks':self.handle_getblocks,
       'getheaders':self.handle_getheaders,
-      }[command](payload)
+      }[command](p)
     except KeyError as e:
-      print(e,command,payload)
+      print(e,command,p)
     
   def send_version(self):
-    p = payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.nonce,'',110879)
+    p = payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
     message.send(self.socket,b'version',p)
-      
-  def handle_connect(self,payload):
-    pass
+    
+  def send_verack(self):
+    message.send(self.socket,b'verack',b'')
+    
+  def send_inv(self,invs):
+    p = payload.inv(invs,self.version)
+    message.send(self.socket,b'inv',p)
+    
+  def send_getdata(self,invs):
+    p = payload.getdata(invs,self.version)
+    message.send(self.socket,b'getdata',p)
   
-  def handle_version(self,payload):
+  def handle_version(self,p):
     print("handle_version")
-    print(payload)
-    self.version = payload['version']
-    self.nonce = payload['nonce']
-    self.services = payload['services']
-    #self.helper.send_verack()
+    print(p)
+    self.version = p['version']
+    self.nonce = p['nonce']
+    self.services = p['services']
+    self.send_verack()
     
-  def handle_verack(self,payload):
+  def handle_verack(self,p):
     print("handle_verack")
-    print(payload)
-    pass
+    print(p)
     
-  def handle_addr(self,payload):
+  def handle_addr(self,p):
     print("handle_addr")
-    print(payload)
-    pass
+    print(p)
   
-  def handle_inv(self,payload):
+  def handle_inv(self,p):
     print("handle_inv")
-    print(payload)
-    #self.helper.send_getdata(payload['invs'])
-    pass
+    print(p)
+    self.send_getdata(p['invs'])
   
-  def handle_getdata(self,payload):
+  def handle_getdata(self,p):
     print("handle_getdata")
-    print(payload)
-    pass
+    print(p)
   
-  def handle_getblocks(self,payload):
+  def handle_getblocks(self,p):
     print("handle_getblocks")
-    print(payload)
+    print(p)
     
-  def handle_getheaders(self,payload):
+  def handle_getheaders(self,p):
     print("handle_getheaders")
-    print(payload)
+    print(p)
     
-  def handle_tx(self,payload):
+  def handle_tx(self,p):
     print("handle_tx")
-    print(payload)
+    print(p)
     
-  def handle_block(self,payload):
+  def handle_block(self,p):
     print("handle_block")
-    print(payload)
+    print(p)
     
-  def handle_headers(self,payload):
+  def handle_headers(self,p):
     print("handle_headers")
-    print(payload)
+    print(p)
     
-  def handle_getaddr(self,payload):
+  def handle_getaddr(self,p):
     print("handle_getaddr")
-    print(payload)
+    print(p)
     
-  def handle_checkorder(self,payload):
+  def handle_checkorder(self,p):
     print("handle_checkorder")
-    print(payload)
+    print(p)
     
-  def handle_submitorder(self,payload):
+  def handle_submitorder(self,p):
     print("handle_submitorder")
-    print(payload)
+    print(p)
     
-  def handle_reply(self,payload):
+  def handle_reply(self,p):
     print("handle_reply")
-    print(payload)
+    print(p)
     
-  def handle_ping(self,payload):
+  def handle_ping(self,p):
     print("handle_ping")
-    print(payload)
+    print(p)
     
-  def handle_alert(self,payload):
+  def handle_alert(self,p):
     print("handle_alert")
-    print(payload)
+    print(p)
   
 if __name__ == "__main__":
-  p = Peer(("::ffff:10.45.134.139",8333))
+  p = Peer(("::ffff:127.0.0.1",8333))
   p.send_version()
   while True:
     p.poll()

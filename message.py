@@ -1,5 +1,6 @@
 import hashlib
 import struct
+import time
 
 magic = b'\xF9\xBE\xB4\xD9'
 
@@ -11,6 +12,7 @@ class reader:
   def buffered_read(self,length):
     while len(self.buffer) < length:
       self.buffer += self.socket.recv(4096)
+      time.sleep(0.1)#avoid tight loops
     ret = self.buffer[:length]
     self.buffer = self.buffer[length:]
     return ret
@@ -23,36 +25,46 @@ class reader:
     command = self.buffered_read(12).decode('ascii').strip('\x00')
     length = struct.unpack('<I',self.buffered_read(struct.calcsize('<I')))[0]
     
-    if command == "version" or command == "verack":
+    if command == 'version' or command == 'verack':
       checksum = None
     else:
       checksum = self.buffered_read(4)
-      length -= len(checksum)
     
     if length > 100*1000:#100 KB
       raise Exception("Packet is too large")
     
-    payload = self.buffered_read(length)
-    
-    import pdb
-    pdb.set_trace()
+    p = self.buffered_read(length)
     
     if checksum:
-      if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != checksum:
+      if hashlib.sha256(hashlib.sha256(p).digest()).digest()[:4] != checksum:
         raise Exception("checksum failure")
     
-    return (command,payload)
+    return (command,p)
     
-def send(s,command,payload):
-  s.sendall(magic)
+def send(s,command,p):
   if len(command) > 12:
     raise Exception("command too long")
-  s.sendall(command)
-  s.sendall(b'\x00'*(12-len(command)))
-  s.sendall(struct.pack('<I',len(payload)))
-  if not (command == "version" or command == "verack"):
-    s.sendall(hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4])
-  s.sendall(payload)
+    
+  if command == b'version' or command == b'verack':
+    checksum = None
+  else:
+    checksum = hashlib.sha256(hashlib.sha256(p).digest()).digest()[:4]
+  
+  b = b''
+  b += magic
+  
+  b += command
+  b += b'\x00'*(12-len(command))
+  
+  b += struct.pack('<I',len(p))
+  
+  if checksum:
+    b += checksum
+  else:
+    b += struct.pack('<I',len(p))
+  
+  b += p
+  s.sendall(b)
 
     
     

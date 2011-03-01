@@ -61,6 +61,10 @@ class buffer_builder:
     self.write(addr)
     self.uint16(port,little_endian=False)
     
+  def inv(self,t,h):
+    self.uint32(t)
+    self.write(h)
+    
 def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
   b = buffer_builder()
   b.uint32(version)
@@ -81,6 +85,47 @@ def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_vers
     else:
       b.uint32(start_height)
       return b.buffer
+      
+def addr(addrs,version):
+  b = buffer_builder()
+  b.var_uint(len(addrs))
+  for addr in addrs:
+    if version >= 31402:
+      b.uint32(addr['timestamp'])
+    b.addr(addr)
+  return b.buffer
+
+def inv(invs,version):
+  b = buffer_builder()
+  b.var_uint(len(invs))
+  for inv in invs:
+    b.inv(*inv)
+  return b.buffer
+  
+def getdata(invs,version):
+  b = buffer_builder()
+  b.var_uint(len(invs))
+  for inv in invs:
+    b.inv(*inv)
+  return b.buffer
+
+def getblocks(self,starts,stop):
+  b = buffer_builder()
+  b.uint32(self.my_version)
+  b.var_uint(len(starts))
+  for start in starts:
+    b.write(start)
+  b.write(stop)
+  return b.buffer
+  
+def getheaders(self,starts,stop):
+  b = buffer_builder()
+  b.uint32(self.my_version)
+  b.var_uint(len(starts))
+  for start in starts:
+    b.write(start)
+  b.write(stop)
+  return b.buffer
 
 class buffer_parser:
   def __init__(self,buf):
@@ -151,9 +196,9 @@ class parser:
   def __init__(self):
     self.version = None
   
-  def parse(self,command,payload):
+  def parse(self,command,p):
     try:
-      self.helper = buffer_parser(payload)
+      self.helper = buffer_parser(p)
       return {
       'version':self.parse_version,
       'verack':self.parse_verack,
@@ -187,7 +232,7 @@ class parser:
     services = self.helper.uint64()
     timestamp = self.helper.uint64()
     
-    addr_me = self.helper.read(26)
+    addr_me = self.read_addr()
     
     ret = {'version':version,'services':services,'timestamp':timestamp,'addr_me':addr_me}
     if version < 106:
