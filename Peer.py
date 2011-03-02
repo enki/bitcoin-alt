@@ -3,8 +3,8 @@ import time
 import random
 import socket
 
-import message
-import payload
+import bitcoin.net.message
+import bitcoin.net.payload
 
 class Peer:
   my_version = 32002
@@ -16,8 +16,8 @@ class Peer:
     self.socket = socket.socket(socket.AF_INET6)
     self.socket.connect(address)
     
-    self.reader = message.reader(self.socket)
-    self.parser = payload.parser()
+    self.reader = bitcoin.net.message.reader(self.socket)
+    self.parser = bitcoin.net.payload.parser()
     
     self.my_nonce = b''
     for x in range(8):
@@ -30,35 +30,38 @@ class Peer:
     command,raw_payload = self.reader.read()
     p = self.parser.parse(command,raw_payload)
     
-    try:
-      {'version':self.handle_version,
-      'verack':self.handle_verack,
-      'addr':self.handle_addr,
-      'inv':self.handle_inv,
-      'getdata':self.handle_getdata,
-      'getblocks':self.handle_getblocks,
-      'getheaders':self.handle_getheaders,
-      'tx':self.handle_tx,
-      'block':self.handle_block,
-      'getaddr':self.handle_getaddr,
-      }[command](p)
-    except KeyError as e:
-      print(e,command,p)
+    if p:
+      try:
+        {'version':self.handle_version,
+        'verack':self.handle_verack,
+        'addr':self.handle_addr,
+        'inv':self.handle_inv,
+        'getdata':self.handle_getdata,
+        'getblocks':self.handle_getblocks,
+        'getheaders':self.handle_getheaders,
+        'tx':self.handle_tx,
+        'block':self.handle_block,
+        'getaddr':self.handle_getaddr,
+        'ping':self.handle_ping,
+        'alert':self.handle_alert,
+        }[command](p)
+      except KeyError as e:
+        print(e,command,p)
     
   def send_version(self):
-    p = payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
-    message.send(self.socket,b'version',p)
+    p = bitcoin.net.payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
+    bitcoin.net.message.send(self.socket,b'version',p)
     
   def send_verack(self):
-    message.send(self.socket,b'verack',b'')
+    bitcoin.net.message.send(self.socket,b'verack',b'')
     
   def send_inv(self,invs):
-    p = payload.inv(invs,self.version)
-    message.send(self.socket,b'inv',p)
+    p = bitcoin.net.payload.inv(invs,self.version)
+    bitcoin.net.message.send(self.socket,b'inv',p)
     
   def send_getdata(self,invs):
-    p = payload.getdata(invs,self.version)
-    message.send(self.socket,b'getdata',p)
+    p = bitcoin.net.payload.getdata(invs,self.version)
+    bitcoin.net.message.send(self.socket,b'getdata',p)
   
   def handle_version(self,p):
     print("handle_version")

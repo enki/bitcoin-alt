@@ -210,6 +210,11 @@ class parser:
       'tx':self.parse_tx,
       'block':self.parse_block,
       'getaddr':self.parse_getaddr,
+      'checkorder':self.parse_checkorder,
+      'submitorder':self.parse_submitorder,
+      'reply':self.parse_reply,
+      'ping':self.parse_ping,
+      'alert':self.parse_alert,
       }[command]()
     except KeyError as e:
       print(e)
@@ -348,3 +353,20 @@ class parser:
     
   def parse_getaddr(self):
     return {}
+    
+  def parse_checkorder(self):
+    return False
+    
+  def parse_submitorder(self):
+    return False
+    
+  def parse_reply(self):
+    return False
+  
+  def parse_ping(self):
+    return {}
+    
+  def parse_alert(self):
+    message = self.helper.string()
+    signature = self.helper.string()
+    return {'message':message,'signature':signature}
