@@ -65,6 +65,21 @@ class buffer_builder:
     self.uint32(t)
     self.write(h)
     
+  def outpoint(self,h,i):
+    self.write(h)
+    self.uint32(i)
+    
+  def tx_in(self,outpoint,script,sequence):
+    self.outpoint(*outpoint)
+    self.var_uint(len(script))
+    self.write(script)
+    self.uint32(sequence)
+    
+  def tx_out(self,value,pk_script):
+    self.uint64(value)
+    self.var_uint(len(pk_script))
+    self.write(pk_script)
+    
 def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
   b = buffer_builder()
   b.uint32(version)
@@ -109,23 +124,37 @@ def getdata(invs,version):
     b.inv(*inv)
   return b.buffer
 
-def getblocks(self,starts,stop):
+def getblocks(version,starts,stop):
   b = buffer_builder()
-  b.uint32(self.my_version)
+  b.uint32(version)
   b.var_uint(len(starts))
   for start in starts:
     b.write(start)
   b.write(stop)
   return b.buffer
   
-def getheaders(self,starts,stop):
+def getheaders(version,starts,stop):
   b = buffer_builder()
-  b.uint32(self.my_version)
+  b.uint32(version)
   b.var_uint(len(starts))
   for start in starts:
     b.write(start)
   b.write(stop)
   return b.buffer
+  
+def tx(version,tx_ins,tx_outs,lock_time):
+  b = buffer_builder()
+  b.uint32(version)
+  b.var_uint(len(tx_ins))
+  for tx_in in tx_ins:
+    b.tx_in(tx_in)
+  b.var_uint(len(tx_outs))
+  for tx_out in tx_outs:
+    b.tx_out(tx_out)
+  b.uint32(lock_time)
+  return b.buffer
+  
+
 
 class buffer_parser:
   def __init__(self,buf):
