@@ -10,7 +10,7 @@ class Peer:
   my_version = 32002
   my_services = 1
 
-  def __init__(self,address,addr_me=(1,'::ffff:127.0.0.1',8333)):
+  def __init__(self,address,addr_me={'services': 1, 'addr': '::ffff:127.0.0.1', 'port': 8333}):
   
     self.address = address
     self.socket = socket.socket(socket.AF_INET6)
@@ -24,13 +24,13 @@ class Peer:
       self.my_nonce += bytes([random.randrange(256)])
     
     self.addr_me = addr_me
-    self.addr_you = (1,address[0],address[1])
+    self.addr_you = {'services':1,'addr':address[0],'port':address[1]}
     
   def poll(self):
     command,raw_payload = self.reader.read()
     p = self.parser.parse(command,raw_payload)
     
-    if p:
+    if p != None:
       try:
         {'version':self.handle_version,
         'verack':self.handle_verack,

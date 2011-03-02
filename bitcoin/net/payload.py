@@ -43,38 +43,38 @@ class buffer_builder:
     self.write(b'\xff')
     self.pack('<Q',(i,))
   
-  def string(self,s):
-    self.var_uint(len(s))
-    self.write(s)
+  def string(self,string):
+    self.var_uint(len(string))
+    self.write(string)
     
-  def null_string(self,s):
-    self.write(s)
+  def null_string(self,string):
+    self.write(string)
     self.write(b'\x00')
     
-  def fixed_string(self,s,length):
-    if len(s) > length:
+  def fixed_string(self,string,length):
+    if len(string) > length:
       raise Exception("string too long")
-    self.write(s)
-    self.write(b'\x00'*(length-len(s)))
+    self.write(string)
+    self.write(b'\x00'*(length-len(string)))
     
-  def addr(self,services,addr,port):
-    self.uint64(services)
-    self.write(socket.inet_pton(socket.AF_INET6,addr))
-    self.uint16(port,little_endian=False)
+  def addr(self,address):
+    self.uint64(address['services'])
+    self.write(socket.inet_pton(socket.AF_INET6,address['addr']))
+    self.uint16(address['port'],little_endian=False)
     
-  def inv(self,t,h):
+  def inv(self,inv):
+    if len(inv['hash']) != 32:
+      raise Exception("hash length is wrong")
+    
+    self.uint32(inv['type'])
+    self.write(inv['hash'])
+    
+  def outpoint(self,h,index):
     if len(h) != 32:
       raise Exception("hash length is wrong")
     
-    self.uint32(t)
     self.write(h)
-    
-  def outpoint(self,h,i):
-    if len(h) != 32:
-      raise Exception("hash length is wrong")
-    
-    self.write(h)
-    self.uint32(i)
+    self.uint32(index)
     
   def tx_in(self,outpoint,script,sequence):
     self.outpoint(*outpoint)
@@ -101,16 +101,21 @@ class buffer_builder:
     
 def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
   b = buffer_builder()
+  
   b.uint32(version)
   b.uint64(services)
   b.uint64(timestamp)
   
-  b.addr(*addr_me)
+  b.addr(addr_me)
   
   if version < 106:
     return b.buffer
   else:
-    b.addr(*addr_you)
+    b.addr(addr_you)
+    
+    if len(nonce) != 8:
+      raise Exception("len(nonce) != 8")
+      
     b.write(nonce)
     b.null_string(sub_version_num.encode('ascii'))
     
@@ -133,14 +138,14 @@ def inv(invs,version):
   b = buffer_builder()
   b.var_uint(len(invs))
   for inv in invs:
-    b.inv(*inv)
+    b.inv(inv)
   return b.buffer
   
 def getdata(invs,version):
   b = buffer_builder()
   b.var_uint(len(invs))
   for inv in invs:
-    b.inv(*inv)
+    b.inv(inv)
   return b.buffer
 
 def getblocks(version,starts,stop):
@@ -250,8 +255,8 @@ class buffer_parser:
     return {'services':services,'addr':addr,'port':port}
     
   def inv_vect(self):
-    inv_type = self.helper.uint32()
-    inv_hash = self.helper.read(32)
+    inv_type = self.uint32()
+    inv_hash = self.read(32)
     return {'type':inv_type,'hash':inv_hash}
     
 class parser:
@@ -318,10 +323,10 @@ class parser:
     for x in range(count):
       if self.version >= 31402:
         timestamp = self.helper.uint32(4)
-        node_addr = self.read_addr()
+        node_addr = self.helper.addr()
         addrs.append({'timestamp':timestamp,'node_addr':node_addr})
       else:
-        node_addr = self.read_addr()
+        node_addr = self.helper.addr()
         addrs.append({'node_addr':node_addr})
     return addrs
     
