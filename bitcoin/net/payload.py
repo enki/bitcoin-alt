@@ -57,15 +57,24 @@ class buffer_builder:
     self.write(b'\x00'*(length-len(s)))
     
   def addr(self,services,addr,port):
+    if len(addr) != 16:
+      raise Exception("addr length is wrong")
+    
     self.uint64(services)
     self.write(addr)
     self.uint16(port,little_endian=False)
     
   def inv(self,t,h):
+    if len(h) != 32:
+      raise Exception("hash length is wrong")
+    
     self.uint32(t)
     self.write(h)
     
   def outpoint(self,h,i):
+    if len(h) != 32:
+      raise Exception("hash length is wrong")
+    
     self.write(h)
     self.uint32(i)
     
