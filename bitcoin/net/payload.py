@@ -1,4 +1,5 @@
 import struct
+import socket
 
 class buffer_builder:
   def __init__(self):
@@ -57,11 +58,8 @@ class buffer_builder:
     self.write(b'\x00'*(length-len(s)))
     
   def addr(self,services,addr,port):
-    if len(addr) != 16:
-      raise Exception("addr length is wrong")
-    
     self.uint64(services)
-    self.write(addr)
+    self.write(socket.inet_pton(socket.AF_INET6,addr))
     self.uint16(port,little_endian=False)
     
   def inv(self,t,h):
@@ -244,6 +242,17 @@ class buffer_parser:
     
   def fixed_string(self,length):
     return self.read(length).decode('ascii').strip('\x00')
+
+  def addr(self):
+    services = self.uint64()
+    addr = socket.inet_ntop(socket.AF_INET6,self.read(16))
+    port = self.uint16(False)
+    return {'services':services,'addr':addr,'port':port}
+    
+  def inv_vect(self):
+    inv_type = self.helper.uint32()
+    inv_hash = self.helper.read(32)
+    return {'type':inv_type,'hash':inv_hash}
     
 class parser:
   def __init__(self):
@@ -272,17 +281,6 @@ class parser:
     except KeyError as e:
       print(e)
       return False
-
-  def read_addr(self):
-    services = self.helper.uint64()
-    addr = self.helper.read(16)
-    port = self.helper.uint16(False)
-    return (services,addr,port)
-    
-  def read_inv_vect(self):
-    inv_type = self.helper.uint32()
-    inv_hash = self.helper.read(32)
-    return (inv_type,inv_hash)
   
   def parse_version(self):
     version = self.helper.uint32()
@@ -292,13 +290,13 @@ class parser:
     services = self.helper.uint64()
     timestamp = self.helper.uint64()
     
-    addr_me = self.read_addr()
+    addr_me = self.helper.addr()
     
     ret = {'version':version,'services':services,'timestamp':timestamp,'addr_me':addr_me}
     if version < 106:
       return ret
     else:
-      addr_you = self.read_addr()
+      addr_you = self.helper.addr()
       nonce = self.helper.read(8)
       sub_version_num = self.helper.null_string()
       
@@ -331,7 +329,7 @@ class parser:
     count = self.helper.var_uint()
     invs = []
     for x in range(count):
-      invs.append(self.read_inv_vect())
+      invs.append(self.helper.inv_vect())
     return {'invs':invs}
     
   def parse_getblocks(self):
