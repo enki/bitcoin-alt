@@ -39,6 +39,8 @@ class Peer:
       'getblocks':self.handle_getblocks,
       'getheaders':self.handle_getheaders,
       'tx':self.handle_tx,
+      'block':self.handle_block,
+      'getaddr':self.handle_getaddr,
       }[command](p)
     except KeyError as e:
       print(e,command,p)
