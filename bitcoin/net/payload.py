@@ -80,6 +80,18 @@ class buffer_builder:
     self.var_uint(len(pk_script))
     self.write(pk_script)
     
+  def tx(self,version,tx_ins,tx_outs,lock_time):
+    b = buffer_builder()
+    b.uint32(version)
+    b.var_uint(len(tx_ins))
+    for tx_in in tx_ins:
+      b.tx_in(tx_in)
+    b.var_uint(len(tx_outs))
+    for tx_out in tx_outs:
+      b.tx_out(tx_out)
+    b.uint32(lock_time)
+    return b.buffer
+    
 def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
   b = buffer_builder()
   b.uint32(version)
@@ -144,17 +156,20 @@ def getheaders(version,starts,stop):
   
 def tx(version,tx_ins,tx_outs,lock_time):
   b = buffer_builder()
-  b.uint32(version)
-  b.var_uint(len(tx_ins))
-  for tx_in in tx_ins:
-    b.tx_in(tx_in)
-  b.var_uint(len(tx_outs))
-  for tx_out in tx_outs:
-    b.tx_out(tx_out)
-  b.uint32(lock_time)
+  b.tx(version,tx_ins,tx_outs,lock_time)
   return b.buffer
   
-
+def block(version,prev_block,merkle_root,timestamp,bits,nonce,txs):
+  b = buffer_builder()
+  b.uint32(version)
+  b.write(prev_block)
+  b.write(merkle_root)
+  b.uint32(timestamp)
+  b.write(bits)
+  b.write(nonce)
+  for tx in txs:
+    b.tx(*tx)
+  return b.buffer
 
 class buffer_parser:
   def __init__(self,buf):
