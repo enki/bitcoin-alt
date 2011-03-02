@@ -38,6 +38,7 @@ class Peer:
       'getdata':self.handle_getdata,
       'getblocks':self.handle_getblocks,
       'getheaders':self.handle_getheaders,
+      'tx':self.handle_tx,
       }[command](p)
     except KeyError as e:
       print(e,command,p)
@@ -127,7 +128,8 @@ class Peer:
     print(p)
   
 if __name__ == "__main__":
-  p = Peer(("::ffff:127.0.0.1",8333))
+  #p = Peer(("::ffff:10.45.134.139",8333))
+  p = Peer(("::ffff:10.45.134.110",8333))
   p.send_version()
   while True:
     p.poll()

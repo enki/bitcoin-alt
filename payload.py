@@ -293,13 +293,13 @@ class parser:
     script_length = self.helper.var_uint()
     script = self.helper.read(script_length)
     sequence = self.helper.uint32()
-    return (outpoint,script,sequence)
+    return {'outpoint':outpoint,'script':script,'sequence':sequence}
     
   def parse_txout(self):
     value = self.helper.uint64()
     pk_script_length = self.helper.var_uint()
     pk_script = self.helper.read(pk_script_length)
-    return (value,pk_script)
+    return {'value':value,'pk_script':pk_script}
     
   def parse_tx(self):
     version = self.helper.uint32()
