@@ -1,5 +1,6 @@
 import hashlib
 import struct
+import socket
 import time
 
 magic = b'\xF9\xBE\xB4\xD9'
@@ -12,7 +13,6 @@ class reader:
   def buffered_read(self,length):
     while len(self.buffer) < length:
       self.buffer += self.socket.recv(4096)
-      time.sleep(0.1)#avoid tight loops
     ret = self.buffer[:length]
     self.buffer = self.buffer[length:]
     return ret

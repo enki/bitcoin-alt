@@ -264,28 +264,24 @@ class parser:
     self.version = None
   
   def parse(self,command,p):
-    try:
-      self.helper = buffer_parser(p)
-      return {
-      'version':self.parse_version,
-      'verack':self.parse_verack,
-      'addr':self.parse_addr,
-      'inv':self.parse_inv,
-      'getdata':self.parse_inv,
-      'getblocks':self.parse_getblocks,
-      'getheaders':self.parse_getblocks,
-      'tx':self.parse_tx,
-      'block':self.parse_block,
-      'getaddr':self.parse_getaddr,
-      'checkorder':self.parse_checkorder,
-      'submitorder':self.parse_submitorder,
-      'reply':self.parse_reply,
-      'ping':self.parse_ping,
-      'alert':self.parse_alert,
-      }[command]()
-    except KeyError as e:
-      print(e)
-      return False
+    self.helper = buffer_parser(p)
+    return {
+    'version':self.parse_version,
+    'verack':self.parse_verack,
+    'addr':self.parse_addr,
+    'inv':self.parse_inv,
+    'getdata':self.parse_inv,
+    'getblocks':self.parse_getblocks,
+    'getheaders':self.parse_getblocks,
+    'tx':self.parse_tx,
+    'block':self.parse_block,
+    'getaddr':self.parse_getaddr,
+    'checkorder':self.parse_checkorder,
+    'submitorder':self.parse_submitorder,
+    'reply':self.parse_reply,
+    'ping':self.parse_ping,
+    'alert':self.parse_alert,
+    }[command]()
   
   def parse_version(self):
     version = self.helper.uint32()
@@ -328,7 +324,7 @@ class parser:
       else:
         node_addr = self.helper.addr()
         addrs.append({'node_addr':node_addr})
-    return addrs
+    return {'addrs':addrs}
     
   def parse_inv(self):
     count = self.helper.var_uint()
