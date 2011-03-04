@@ -14,7 +14,7 @@ class Peer(threading.Thread):
     self.address = address
     self.socket = socket.socket(socket.AF_INET6)
     self.socket.connect(address)
-    self.socket.settimeout(60)
+    self.socket.settimeout(5)
     
     self.reader = bitcoin.net.message.reader(self.socket)
     self.parser = bitcoin.net.payload.parser()
@@ -40,8 +40,11 @@ class Peer(threading.Thread):
       try:
         command,raw_payload = self.reader.read()
       except socket.timeout as e:
+        print("sending ping")
         self.send_ping()
         continue
+      except socket.error as e:
+        return
       finally:
         if self.shutdown.is_set():
           return

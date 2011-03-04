@@ -5,21 +5,28 @@ import bitcoin.net.peer
 import bitcoin.storage.peers
 
 class Node:
-  static_nodes = [("::ffff:10.45.134.110",8333)]
+  static_peers = [("::ffff:10.45.134.110",8333)]
   
   def __init__(self):
     super(Node,self).__init__()
     
-    self.peers = set()
+    self.open_peers = {}
     self.cb = queue.Queue()
     
     self.shutdown = threading.Event()
     self.shutdown.clear()
     
-    for node in Node.static_nodes:
-      p = bitcoin.net.peer.Peer(node,self.cb,self.shutdown)
-      p.daemon = True
+    for peer in Node.static_peers:
+      self.start_peer(peer)
+      
+  def start_peer(self,peer):
+    if not peer in self.open_peers:
+      p = bitcoin.net.peer.Peer(peer,self.cb,self.shutdown)
       p.start()
+      self.open_peers[peer] = p
+    elif not self.open_peers[peer].is_alive():
+      self.open_peers[peer].start()
+      
     
   def run(self):
     while True:
@@ -46,10 +53,13 @@ class Node:
         return
       
   def handle_addr(self,peer,payload):
-    pass
+    for addr in payload['addrs']:
+      print(addr['node_addr'])
+      self.start_peer((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,peer,payload):
-    peer.send_getdata(payload['invs'])
+    #peer.send_getdata(payload['invs'])
+    pass
   
   def handle_getdata(self,peer,payload):
     pass

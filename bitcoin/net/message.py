@@ -12,7 +12,10 @@ class reader:
   
   def buffered_read(self,length):
     while len(self.buffer) < length:
-      self.buffer += self.socket.recv(4096)
+      buffer = self.socket.recv(4096)
+      if buffer == b'':# this signals the other end has hung up
+        raise socket.error
+      self.buffer += buffer
     ret = self.buffer[:length]
     self.buffer = self.buffer[length:]
     return ret
