@@ -1,5 +1,6 @@
 import threading
 import queue
+import random
 
 import bitcoin.net.peer
 import bitcoin.storage.peers
@@ -10,7 +11,7 @@ class Node:
   def __init__(self):
     super(Node,self).__init__()
     
-    self.open_peers = {}
+    self.peers = {}
     self.cb = queue.Queue()
     
     self.shutdown = threading.Event()
@@ -18,14 +19,15 @@ class Node:
     
     for peer in Node.static_peers:
       self.start_peer(peer)
+  
+  def add_peer(self,peer):
+    if not peer in self.peers:
+      p = bitcoin.net.peer.Peer(peer,self.cb,self.shutdown)
+      self.peers[peer] = p
       
   def start_peer(self,peer):
-    if not peer in self.open_peers:
-      p = bitcoin.net.peer.Peer(peer,self.cb,self.shutdown)
-      p.start()
-      self.open_peers[peer] = p
-    elif not self.open_peers[peer].is_alive():
-      self.open_peers[peer].start()
+    self.add_peer(peer)
+    self.peers[peer].start()
       
     
   def run(self):
@@ -48,14 +50,36 @@ class Node:
         'alert':self.handle_alert,
         }[command](peer,payload)
       except queue.Empty as e:
-        continue
+        pass
       except KeyboardInterrupt as e:
         return
+        
+      open_peers = self.open_peers()
+      closed_peers = self.closed_peers()
+
+      if len(open_peers) < 8 and len(closed_peers) > 0:
+        for x in range(8-len(open_peers)):
+          peer = random.choice(closed_peers)
+          self.start_peer(peer)
+          closed_peers.remove(peer)
+  
+  def closed_peers(self):
+    ret = []
+    for peer in self.peers:
+      if not self.peers[peer].is_alive():
+        ret.append(peer)
+    return ret
+  
+  def open_peers(self):
+    ret = []
+    for peer in self.peers:
+      if self.peers[peer].is_alive():
+        ret.append(peer)
+    return ret
       
   def handle_addr(self,peer,payload):
     for addr in payload['addrs']:
-      print(addr['node_addr'])
-      self.start_peer((addr['node_addr']['addr'],addr['node_addr']['port']))
+      self.add_peer((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,peer,payload):
     #peer.send_getdata(payload['invs'])

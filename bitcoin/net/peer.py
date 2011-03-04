@@ -13,8 +13,7 @@ class Peer(threading.Thread):
     
     self.address = address
     self.socket = socket.socket(socket.AF_INET6)
-    self.socket.connect(address)
-    self.socket.settimeout(5)
+    self.socket.settimeout(30)
     
     self.reader = bitcoin.net.message.reader(self.socket)
     self.parser = bitcoin.net.payload.parser()
@@ -32,10 +31,11 @@ class Peer(threading.Thread):
     self.cb = cb
     self.slock = threading.Lock()
     self.shutdown = shutdown
-    
-    self.send_version()
+    self.daemon = True
     
   def run(self):
+    self.socket.connect(self.address)
+    self.send_version()
     while True:
       try:
         command,raw_payload = self.reader.read()
@@ -73,6 +73,10 @@ class Peer(threading.Thread):
     with self.slock:
       p = bitcoin.net.payload.inv(invs,self.version)
       bitcoin.net.message.send(self.socket,b'inv',p)
+    
+  def send_getaddr(self):
+    with self.slock:
+      bitcoin.net.message.send(self.socket,b'getaddr',b'')
     
   def send_getdata(self,invs):
     with self.slock:
