@@ -3,32 +3,14 @@ import queue
 import random
 
 import bitcoin.net.peer
-import bitcoin.storage.peers
+#import bitcoin.storage.data
 
 class Node:
-  static_peers = [("::ffff:10.45.134.110",8333)]
-  
-  def __init__(self):
+  def __init__(self,cb,peers):
     super(Node,self).__init__()
     
-    self.peers = {}
-    self.cb = queue.Queue()
-    
-    self.shutdown = threading.Event()
-    self.shutdown.clear()
-    
-    for peer in Node.static_peers:
-      self.start_peer(peer)
-  
-  def add_peer(self,peer):
-    if not peer in self.peers:
-      p = bitcoin.net.peer.Peer(peer,self.cb,self.shutdown)
-      self.peers[peer] = p
-      
-  def start_peer(self,peer):
-    self.add_peer(peer)
-    self.peers[peer].start()
-      
+    self.cb = cb
+    self.peers = peers
     
   def run(self):
     while True:
@@ -53,33 +35,12 @@ class Node:
         pass
       except KeyboardInterrupt as e:
         return
-        
-      open_peers = self.open_peers()
-      closed_peers = self.closed_peers()
-
-      if len(open_peers) < 8 and len(closed_peers) > 0:
-        for x in range(8-len(open_peers)):
-          peer = random.choice(closed_peers)
-          self.start_peer(peer)
-          closed_peers.remove(peer)
-  
-  def closed_peers(self):
-    ret = []
-    for peer in self.peers:
-      if not self.peers[peer].is_alive():
-        ret.append(peer)
-    return ret
-  
-  def open_peers(self):
-    ret = []
-    for peer in self.peers:
-      if self.peers[peer].is_alive():
-        ret.append(peer)
-    return ret
+      
+      self.peers.start_minimum(8)
       
   def handle_addr(self,peer,payload):
     for addr in payload['addrs']:
-      self.add_peer((addr['node_addr']['addr'],addr['node_addr']['port']))
+      self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,peer,payload):
     #peer.send_getdata(payload['invs'])

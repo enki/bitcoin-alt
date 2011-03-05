@@ -33,6 +33,8 @@ class Peer(threading.Thread):
     self.shutdown = shutdown
     self.daemon = True
     
+    self.last_seen = 0
+    
   def run(self):
     self.socket.connect(self.address)
     self.send_version()
@@ -40,7 +42,6 @@ class Peer(threading.Thread):
       try:
         command,raw_payload = self.reader.read()
       except socket.timeout as e:
-        print("sending ping")
         self.send_ping()
         continue
       except socket.error as e:
@@ -48,6 +49,8 @@ class Peer(threading.Thread):
       finally:
         if self.shutdown.is_set():
           return
+          
+      self.last_seen = time.time()
 
       p = self.parser.parse(command,raw_payload)
       
