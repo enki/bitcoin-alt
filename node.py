@@ -5,12 +5,15 @@ import random
 import bitcoin.net.peer
 #import bitcoin.storage.data
 
-class Node:
-  def __init__(self,cb,peers):
+class Node(threading.Thread):
+  def __init__(self,cb,peers,shutdown):
     super(Node,self).__init__()
     
     self.cb = cb
     self.peers = peers
+    
+    self.shutdown = shutdown
+    self.daemon = True
     
   def run(self):
     while True:
@@ -35,8 +38,9 @@ class Node:
         pass
       except KeyboardInterrupt as e:
         return
-      
-      self.peers.start_minimum(8)
+      finally:
+        if self.shutdown.is_set():
+          return
       
   def handle_addr(self,peer,payload):
     for addr in payload['addrs']:
