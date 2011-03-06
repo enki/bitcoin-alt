@@ -12,10 +12,7 @@ class Peer(threading.Thread):
     super(Peer,self).__init__()
     
     self.address = address
-    self.socket = socket.socket(socket.AF_INET6)
-    self.socket.settimeout(30)
-    
-    self.reader = bitcoin.net.message.reader(self.socket)
+
     self.parser = bitcoin.net.payload.parser()
     
     self.my_nonce = b''
@@ -35,8 +32,16 @@ class Peer(threading.Thread):
     
     self.last_seen = 0
     
+    # possibly this should be in run()
+    self.socket = socket.socket(socket.AF_INET6)
+    self.socket.settimeout(5)
+    
+    self.reader = bitcoin.net.message.reader(self.socket)
+    
   def run(self):
+    
     self.socket.connect(self.address)
+    self.socket.settimeout(30)
     self.send_version()
     while True:
       try:

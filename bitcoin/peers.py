@@ -36,8 +36,6 @@ class Peers(threading.Thread):
       with self.plock:
         open_peers = self.open()
         closed_peers = self.closed()
-        
-        print(open_peers,closed_peers)
 
         while len(open_peers) < self.count and len(closed_peers) > 0:
           peer = random.choice(closed_peers)
