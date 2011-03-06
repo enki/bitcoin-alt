@@ -46,7 +46,10 @@ class Peer(threading.Thread):
     except socket.timeout as e:
       return
     except socket.error as e:
-      if socket.errno == 111:
+      if e.errno == 111:
+        return
+      elif e.errno == 113:
+        print(e,self.address)
         return
       else:
         raise e

@@ -24,8 +24,7 @@ class Storage:
         
         for r in rows:
           tx_in = {}
-          tx_in['out_hash'] = r['out_hash']
-          tx_in['out_index'] = r['out_index']
+          tx_in['outpoint'] = {'out_index':r['out_index'],'out_hash':r['out_hash']}
           tx_in['script'] = r['script']
           tx_in['sequence'] = r['sequence']
           tx['tx_ins'].append(tx_in)
@@ -36,7 +35,7 @@ class Storage:
         for r in rows:
           tx_out = {}
           tx_out['value'] = r['value']
-          tx_out['script'] = r['script']
+          tx_out['pk_script'] = r['script']
           tx['tx_outs'].append(tx_out)
         
         return tx
@@ -61,7 +60,7 @@ class Storage:
       else:
         return None
     
-  def put_tx(self,tx,h,block=None):
+  def put_tx(self,tx,block=None):
     with self.dlock:
       c = self.db.cursor()
       c.execute('INSERT INTO txs(version,lock_time,hash,block) VALUES (?,?,?,?)',tx['version'],tx['lock_time'],tx['hash'],block)

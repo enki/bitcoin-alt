@@ -6,7 +6,6 @@ import sys
 
 import bitcoin.node
 import bitcoin.peers
-import bitcoin.storage
 
 static_peers = [("::ffff:174.120.185.74",8333),("::ffff:193.25.1.157",8333)]
 
@@ -14,15 +13,13 @@ cb = queue.Queue()
 shutdown = threading.Event()
 shutdown.clear()
 
-storage = bitcoin.storage.Storage()
-
 peers = bitcoin.peers.Peers(cb,shutdown)
 peers.start()
 
 for peer in static_peers:
   peers.add(peer)
 
-node = bitcoin.node.Node(cb,peers,storage,shutdown)
+node = bitcoin.node.Node(cb,peers,shutdown)
 node.start()
 
 while True:

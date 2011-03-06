@@ -3,20 +3,21 @@ import queue
 import random
 
 import bitcoin.net.peer
-#import bitcoin.storage.data
+import bitcoin.storage
 
 class Node(threading.Thread):
-  def __init__(self,cb,peers,storage,shutdown):
+  def __init__(self,cb,peers,shutdown):
     super(Node,self).__init__()
     
     self.cb = cb
     self.peers = peers
-    self.storage = storage
     
     self.shutdown = shutdown
     self.daemon = True
     
   def run(self):
+    self.storage = bitcoin.storage.Storage()# this has to be here so that it's created in the same thread as it's used
+    
     while True:
       try:
         event = self.cb.get(True,0.1)
@@ -48,16 +49,27 @@ class Node(threading.Thread):
       self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,peer,payload):
-    #peer.send_getdata(payload['invs'])
-    pass
+    invs = []
+    for inv in payload['invs']:
+      if inv['type'] == 1:
+        if not self.storage.get_tx(inv['hash']):
+          invs.append(inv)
+      if inv['type'] == 2:
+        if not self.storage.get_block(inv['hash']):
+          invs.append(inv)
+    peer.send_getdata(invs)
+          
   
   def handle_getdata(self,peer,payload):
-    return
     for inv in payload['invs']:
       if inv['type'] == 1:
         d = self.storage.get_tx(inv['hash'])
         if d:
           peer.send_tx(d)
+      if inv['type'] == 2:
+        d = self.storage.get_block(inv['hash'])
+        if d:
+          peer.send_block(d)
   
   def handle_getblocks(self,peer,payload):
     pass
@@ -66,11 +78,10 @@ class Node(threading.Thread):
     pass
     
   def handle_tx(self,peer,payload):
-    print(payload)
-    pass
+    self.storage.put_tx(payload)
     
   def handle_block(self,peer,payload):
-    pass
+    self.storage.put_block(payload)
     
   def handle_headers(self,peer,payload):
     pass
