@@ -1,0 +1,12 @@
+Documentation available in python formatting in:
+
+bitcoin/peers.py
+bitcoin/net/payload.py
+bitcoin/net/__init__.py
+bitcoin/net/peer.py
+bitcoin/net/message.py
+bitcoin/__init__.py
+bitcoin/wallet/__init__.py
+bitcoin/storage.py
+bitcoin/node.py
+bitcoin.py

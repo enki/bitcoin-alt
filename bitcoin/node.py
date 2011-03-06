@@ -6,11 +6,12 @@ import bitcoin.net.peer
 #import bitcoin.storage.data
 
 class Node(threading.Thread):
-  def __init__(self,cb,peers,shutdown):
+  def __init__(self,cb,peers,storage,shutdown):
     super(Node,self).__init__()
     
     self.cb = cb
     self.peers = peers
+    self.storage = storage
     
     self.shutdown = shutdown
     self.daemon = True
@@ -51,7 +52,8 @@ class Node(threading.Thread):
     pass
   
   def handle_getdata(self,peer,payload):
-    pass
+    for inv in payload['invs']:
+      print(inv)
   
   def handle_getblocks(self,peer,payload):
     pass
