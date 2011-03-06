@@ -39,10 +39,17 @@ class Peer(threading.Thread):
     self.reader = bitcoin.net.message.reader(self.socket)
     
   def run(self):
-    
-    self.socket.connect(self.address)
-    self.socket.settimeout(30)
-    self.send_version()
+    try:
+      self.socket.connect(self.address)
+      self.socket.settimeout(30)
+      self.send_version()
+    except socket.timeout as e:
+      return
+    except socket.error as e:
+      if socket.errno == 111:
+        return
+      else:
+        raise e
     while True:
       try:
         command,raw_payload = self.reader.read()
@@ -90,6 +97,11 @@ class Peer(threading.Thread):
     with self.slock:
       p = bitcoin.net.payload.getdata(invs,self.version)
       bitcoin.net.message.send(self.socket,b'getdata',p)
+      
+  def send_tx(self,tx):
+    with self.slock:
+      p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
+      bitcoin.net.message.send(self.socket,b'tx',p)
     
   def send_ping(self):
     with self.slock:

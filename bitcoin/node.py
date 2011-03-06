@@ -52,8 +52,12 @@ class Node(threading.Thread):
     pass
   
   def handle_getdata(self,peer,payload):
+    return
     for inv in payload['invs']:
-      print(inv)
+      if inv['type'] == 1:
+        d = self.storage.get_tx(inv['hash'])
+        if d:
+          peer.send_tx(d)
   
   def handle_getblocks(self,peer,payload):
     pass
@@ -62,6 +66,7 @@ class Node(threading.Thread):
     pass
     
   def handle_tx(self,peer,payload):
+    print(payload)
     pass
     
   def handle_block(self,peer,payload):

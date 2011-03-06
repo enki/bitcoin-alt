@@ -6,7 +6,7 @@ class Storage:
     self.db = sqlite3.connect('bitcoin.sqlite3')
     self.dlock = threading.RLock()
     
-  def get(self,h):
+  def get_tx(self,h):
     with self.dlock:
       c = self.db.execute('SELECT * FROM txs WHERE hash=?',(h,))
       r = c.fetchone()
@@ -40,7 +40,11 @@ class Storage:
           tx['tx_outs'].append(tx_out)
         
         return tx
-      
+      else:
+        return None
+        
+  def get_block(self,h):
+    with self.dlock:
       c = self.db.execute('SELECT * FROM blocks WHERE hash=?',(h,))
       r = c.fetchone()
       if r:
@@ -54,8 +58,8 @@ class Storage:
         block['nonce'] = r['nonce']
         
         return block
-      
-      return None
+      else:
+        return None
     
   def put_tx(self,tx,h,block=None):
     with self.dlock:
