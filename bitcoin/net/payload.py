@@ -40,8 +40,19 @@ class buffer_builder:
     self.pack(format,(i,))
   
   def var_uint(self,i):
-    self.write(b'\xff')
-    self.pack('<Q',(i,))
+    if i < 0xFD:
+      self.pack('<B',(i,))
+    elif i <= 2**16:
+      self.write(b'\xfd')
+      self.pack('<H',(i,))
+    elif i <= 2**32:
+      self.write(b'\xfe')
+      self.pack('<I',(i,))
+    elif i <= 2**64:
+      self.write(b'\xff')
+      self.pack('<Q',(i,))
+    else:
+      raise Exception("integer wayyyy too big")
   
   def string(self,string):
     self.var_uint(len(string))
@@ -71,13 +82,14 @@ class buffer_builder:
     
   def outpoint(self,h,index):
     if len(h) != 32:
+      print(h)
       raise Exception("hash length is wrong")
     
     self.write(h)
     self.uint32(index)
     
   def tx_in(self,outpoint,script,sequence):
-    self.outpoint(*outpoint)
+    self.outpoint(outpoint['out_hash'],outpoint['out_index'])
     self.var_uint(len(script))
     self.write(script)
     self.uint32(sequence)
@@ -88,16 +100,14 @@ class buffer_builder:
     self.write(pk_script)
     
   def tx(self,version,tx_ins,tx_outs,lock_time):
-    b = buffer_builder()
-    b.uint32(version)
-    b.var_uint(len(tx_ins))
+    self.uint32(version)
+    self.var_uint(len(tx_ins))
     for tx_in in tx_ins:
-      b.tx_in(tx_in)
-    b.var_uint(len(tx_outs))
+      self.tx_in(tx_in['outpoint'],tx_in['script'],tx_in['sequence'])
+    self.var_uint(len(tx_outs))
     for tx_out in tx_outs:
-      b.tx_out(tx_out)
-    b.uint32(lock_time)
-    return b.buffer
+      self.tx_out(tx_out['value'],tx_out['pk_script'])
+    self.uint32(lock_time)
     
 def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
   b = buffer_builder()
@@ -361,6 +371,7 @@ class parser:
     return {'value':value,'pk_script':pk_script}
     
   def parse_tx(self):
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
     version = self.helper.uint32()
     tx_in_count = self.helper.var_uint()
     tx_ins = []
@@ -371,9 +382,10 @@ class parser:
     for x in range(tx_out_count):
       tx_outs.append(self.parse_txout())
     lock_time = self.helper.uint32()
-    return {'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
+    return {'hash':h,'version':version,'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
 
   def parse_block(self):
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
     version = self.helper.uint32()
     prev_block = self.helper.read(32)
     merkle_root = self.helper.read(32)
@@ -401,7 +413,7 @@ class parser:
     for x in range(tx_count):
       txs.append(self.parse_tx())
       
-    return {'version':version,'prev_block':prev_block,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
+    return {'hash':h,'version':version,'prev_block':prev_block,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
     
   def parse_getaddr(self):
     return {}

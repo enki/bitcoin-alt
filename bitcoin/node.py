@@ -2,6 +2,8 @@ import threading
 import queue
 import random
 
+import bitcoin.net.payload
+
 import bitcoin.net.peer
 import bitcoin.storage
 
@@ -54,6 +56,7 @@ class Node(threading.Thread):
       if inv['type'] == 1:
         if not self.storage.get_tx(inv['hash']):
           invs.append(inv)
+          print(inv)
       if inv['type'] == 2:
         if not self.storage.get_block(inv['hash']):
           invs.append(inv)

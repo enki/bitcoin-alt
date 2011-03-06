@@ -61,6 +61,8 @@ class Storage:
         return None
     
   def put_tx(self,tx,block=None):
+    if not tx['hash']:
+      tx['hash'] = hashlib.sha256(hashlib.sha256(bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])).digest()).digest()
     with self.dlock:
       c = self.db.cursor()
       c.execute('INSERT INTO txs(version,lock_time,hash,block) VALUES (?,?,?,?)',tx['version'],tx['lock_time'],tx['hash'],block)
@@ -73,7 +75,9 @@ class Storage:
       self.db.commit()
       
   def put_block(self,block):
+    if not block['hash']:
+      block['hash'] = hashlib.sha256(hashlib.sha256(bitcoin.net.payload.block(block['version'],block['prev_hash'],block['merkle_root'],block['timestamp'],block['bits'].block['nonce'],[])).digest()).digest()
     with self.dlock:
       c = self.db.cursor()
-      c.execute('INSERT INTO blocks(version,prev_hash,merkle_root,timestamp,bits,nonce) VALUES(?,?,?,?,?,?)',block['version'],block['prev_hash'],block['merkle_root'],block['timestamp'],block['bits'],block['nonce'])
+      c.execute('INSERT INTO blocks(version,prev_hash,merkle_root,timestamp,bits,nonce) VALUES(?,?,?,?,?,?)',block['version'],block['prev_block'],block['merkle_root'],block['timestamp'],block['bits'],block['nonce'])
       self.db.commit()
