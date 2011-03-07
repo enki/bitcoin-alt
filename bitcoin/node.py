@@ -28,7 +28,8 @@ class Node(threading.Thread):
         command = event['command']
         payload = event['payload']
         
-        {'addr':self.handle_addr,
+        {'connect':self.handle_connect,
+        'addr':self.handle_addr,
         'inv':self.handle_inv,
         'getdata':self.handle_getdata,
         'getblocks':self.handle_getblocks,
@@ -45,6 +46,9 @@ class Node(threading.Thread):
       finally:
         if self.shutdown.is_set():
           return
+          
+  def handle_connect(self,peer,payload):
+    pass
       
   def handle_addr(self,peer,payload):
     for addr in payload['addrs']:
@@ -56,7 +60,6 @@ class Node(threading.Thread):
       if inv['type'] == 1:
         if not self.storage.get_tx(inv['hash']):
           invs.append(inv)
-          print(inv)
       if inv['type'] == 2:
         if not self.storage.get_block(inv['hash']):
           invs.append(inv)

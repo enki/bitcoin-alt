@@ -49,7 +49,6 @@ class Peer(threading.Thread):
       if e.errno == 111:
         return
       elif e.errno == 113:
-        print(e,self.address)
         return
       else:
         raise e
@@ -70,8 +69,13 @@ class Peer(threading.Thread):
       p = self.parser.parse(command,raw_payload)
       
       if command == 'version':
-        self.handle_version(p)
-      elif command in ['verack','ping']:
+        self.version = p['version']
+        self.nonce = p['nonce']
+        self.services = p['services']
+        self.send_verack()
+      elif command == 'verack':
+        self.cb.put({'peer':self,'command':'connect','payload':{}})
+      elif command == 'ping':
         pass
       elif self.version:
         self.cb.put({'peer':self,'command':command,'payload':p})
@@ -87,6 +91,11 @@ class Peer(threading.Thread):
     with self.slock:
       bitcoin.net.message.send(self.socket,b'verack',b'')
     
+  def send_addr(self,addrs):
+    with self.slock:
+      p = bitcoin.net.payload.addr(addrs,self.version)
+      bitcoin.net.message.send(self.socket,b'addr',p)
+      
   def send_inv(self,invs):
     with self.slock:
       p = bitcoin.net.payload.inv(invs,self.version)
@@ -101,6 +110,21 @@ class Peer(threading.Thread):
       p = bitcoin.net.payload.getdata(invs,self.version)
       bitcoin.net.message.send(self.socket,b'getdata',p)
       
+  def send_getblocks(self,starts,stop):
+    with self.slock:
+      p = bitcoin.net.payload.getblocks(self.version,starts,stop)
+      bitcoin.net.message.send(self.socket,b'getblocks',p)
+      
+  def send_getheaders(self,starts,stop):
+    with self.slock:
+      p = bitcoin.net.payload.getheaders(self.version,starts,stop)
+      bitcoin.net.message.send(self.socket,b'getheaders',p)
+      
+  def send_block(self,version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
+    with self.slock:
+      p = bitcoin.net.payload.block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs)
+      bitcoin.net.message.send(self.socket,b'block',p)
+      
   def send_tx(self,tx):
     with self.slock:
       p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
@@ -109,9 +133,3 @@ class Peer(threading.Thread):
   def send_ping(self):
     with self.slock:
       bitcoin.net.message.send(self.socket,b'ping',b'')
-  
-  def handle_version(self,p):
-    self.version = p['version']
-    self.nonce = p['nonce']
-    self.services = p['services']
-    self.send_verack()

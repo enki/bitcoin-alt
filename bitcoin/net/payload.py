@@ -1,5 +1,6 @@
 import struct
 import socket
+import hashlib
 
 class buffer_builder:
   def __init__(self):
@@ -82,7 +83,6 @@ class buffer_builder:
     
   def outpoint(self,h,index):
     if len(h) != 32:
-      print(h)
       raise Exception("hash length is wrong")
     
     self.write(h)
@@ -181,10 +181,10 @@ def tx(version,tx_ins,tx_outs,lock_time):
   b.tx(version,tx_ins,tx_outs,lock_time)
   return b.buffer
   
-def block(version,prev_block,merkle_root,timestamp,bits,nonce,txs):
+def block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
   b = buffer_builder()
   b.uint32(version)
-  b.write(prev_block)
+  b.write(prev_hash)
   b.write(merkle_root)
   b.uint32(timestamp)
   b.write(bits)
@@ -385,9 +385,9 @@ class parser:
     return {'hash':h,'version':version,'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
 
   def parse_block(self):
-    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer[:4+32+32+4+4+4]).digest()).digest()
     version = self.helper.uint32()
-    prev_block = self.helper.read(32)
+    prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)
     timestamp = self.helper.uint32()
     
@@ -413,7 +413,7 @@ class parser:
     for x in range(tx_count):
       txs.append(self.parse_tx())
       
-    return {'hash':h,'version':version,'prev_block':prev_block,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
+    return {'hash':h,'version':version,'prev_hash':prev_hash,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
     
   def parse_getaddr(self):
     return {}
