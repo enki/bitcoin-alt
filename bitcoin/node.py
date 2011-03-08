@@ -1,6 +1,7 @@
 import threading
 import queue
 import random
+import sqlite3
 
 import bitcoin.net.payload
 
@@ -46,8 +47,23 @@ class Node(threading.Thread):
       finally:
         if self.shutdown.is_set():
           return
+
+  def connect_blocks(self,peer):
+    try:
+      heads = self.storage.get_heads()
+      tails = self.storage.get_tails()
+      
+      for tail in tails:
+        print(heads,tail)
+        try:
+          peer.send_getblocks(heads,tail)
+        except AttributeError as e:
+          pass#this is raised when no version has yet been received
+    except sqlite3.OperationalError as e:
+      pass
       
   def handle_connect(self,peer,payload):
+    self.connect_blocks(peer)
     pass
       
   def handle_addr(self,peer,payload):
@@ -55,6 +71,7 @@ class Node(threading.Thread):
       self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,peer,payload):
+    self.connect_blocks(peer)#inv is sent by peers after their resonse to getblocks
     invs = []
     for inv in payload['invs']:
       if inv['type'] == 1:

@@ -8,8 +8,8 @@ import bitcoin.node
 import bitcoin.peers
 import bitcoin.connector
 
-#static_peers = [("::ffff:174.120.185.74",8333),("::ffff:193.25.1.157",8333)]
-static_peers = [("::ffff:10.45.134.110",8333)]
+static_peers = [("::ffff:174.120.185.74",8333),("::ffff:193.25.1.157",8333)]
+#static_peers = [("::ffff:10.45.134.110",8333)]
 
 cb = queue.Queue()
 shutdown = threading.Event()
@@ -24,13 +24,14 @@ for peer in static_peers:
 node = bitcoin.node.Node(cb,peers,shutdown)
 node.start()
 
-connector = bitcoin.connector.Connector(peers)
+connector = bitcoin.connector.Connector()
 connector.start()
 
 while True:
   try:
     time.sleep(0.1)
   except KeyboardInterrupt as e:
+    print("shutting down")
     shutdown.set()
     node.join()
     peers.join()
