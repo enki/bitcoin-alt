@@ -37,24 +37,22 @@ class Storage:
   
   def connect_blocks(self):
     with self.dlock:
-      c = self.db.execute('SELECT * FROM blocks WHERE height IS NULL ORDER BY timestamp ASC')
+      c = self.db.execute('SELECT * FROM blocks WHERE height IS NULL AND prev_hash IN (SELECT hash FROM blocks WHERE height IS NOT NULL)')
       to_update = {}
-      improved = True
+      start_blocks = c.fetchall()
       
-      while improved:
-        improved = False
-        for r in c:
-          block = dict(r)
-          if block['prev_hash'] in to_update:
-            prev_block = to_update[block['prev_hash']]
-          else:
-            prev_block = self.get_block(block['prev_hash'])
-          
-          if prev_block:
-            if prev_block['height']:
-              block['height'] = self.difficulty(block['bits']) + prev_block['height']
-              to_update[block['hash']] = block
-              improved = True
+      for start_block in start_blocks:
+          block = dict(start_block)
+          while block:
+            if block['prev_hash'] in to_update:
+              prev_block = to_update[block['prev_hash']]
+            else:
+              prev_block = self.get_block(block['prev_hash'])
+            
+            block['height'] = self.difficulty(block['bits']) + prev_block['height']
+            to_update[block['hash']] = block
+                
+            block = self.get_block_with_prev_hash(block['hash'])
       
       self.db.executemany('UPDATE blocks SET height=? WHERE hash=?',[(b['height'],b['hash']) for h,b in to_update.items()])
       self.db.commit()
