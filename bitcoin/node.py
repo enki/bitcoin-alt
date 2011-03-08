@@ -46,7 +46,7 @@ class Node(threading.Thread):
       finally:
         if self.shutdown.is_set():
           return
-          
+      
   def handle_connect(self,peer,payload):
     pass
       

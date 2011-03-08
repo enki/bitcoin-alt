@@ -187,7 +187,7 @@ def block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
   b.write(prev_hash)
   b.write(merkle_root)
   b.uint32(timestamp)
-  b.write(bits)
+  b.uint32(bits)
   b.write(nonce)
   for tx in txs:
     b.tx(*tx)
@@ -371,7 +371,6 @@ class parser:
     return {'value':value,'pk_script':pk_script}
     
   def parse_tx(self):
-    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
     version = self.helper.uint32()
     tx_in_count = self.helper.var_uint()
     tx_ins = []
@@ -382,10 +381,9 @@ class parser:
     for x in range(tx_out_count):
       tx_outs.append(self.parse_txout())
     lock_time = self.helper.uint32()
-    return {'hash':h,'version':version,'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
+    return {'hash':None, 'version':version,'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
 
   def parse_block(self):
-    h = hashlib.sha256(hashlib.sha256(self.helper.buffer[:4+32+32+4+4+4]).digest()).digest()
     version = self.helper.uint32()
     prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)
@@ -413,7 +411,7 @@ class parser:
     for x in range(tx_count):
       txs.append(self.parse_tx())
       
-    return {'hash':h,'version':version,'prev_hash':prev_hash,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
+    return {'hash':None, 'version':version,'prev_hash':prev_hash,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
     
   def parse_getaddr(self):
     return {}

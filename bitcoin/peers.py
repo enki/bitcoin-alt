@@ -16,12 +16,19 @@ class Peers(threading.Thread):
     self.cb = cb
     self.shutdown = shutdown
     self.daemon = True
+    
+  def get_thread(self,address):
+    with self.plock:
+      if self.peers[address]['thread'].is_alive():
+        return self.peers[address]['thread']
+      else:
+        return None
   
   def add(self,address):
     with self.plock:
       if address not in self.peers:
         self.peers[address] = {}
-        self.peers[address]['last_tried'] = 0 # we can assume that we're running this program after 1/1/1970
+        self.peers[address]['last_tried'] = 0 # we can assume that we're running this program after 1/1/1970 TODO CAN WE?
         self.peers[address]['thread'] = None
         
   def start_peer(self,address):
