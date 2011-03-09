@@ -50,6 +50,7 @@ class Node(threading.Thread):
 
   def connect_blocks(self,peer):
     try:
+      self.storage.connect_blocks()
       heads = self.storage.get_heads()
       tails = self.storage.get_tails()
       
@@ -101,9 +102,11 @@ class Node(threading.Thread):
     pass
     
   def handle_tx(self,peer,payload):
+    print(payload)
     self.storage.put_tx(payload)
     
   def handle_block(self,peer,payload):
+    print(payload)
     self.storage.put_block(payload)
     
   def handle_headers(self,peer,payload):

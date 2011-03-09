@@ -109,7 +109,15 @@ class buffer_builder:
       self.tx_out(tx_out['value'],tx_out['pk_script'])
     self.uint32(lock_time)
     
-def version(version,services,timestamp,addr_me,addr_you=None,nonce=None,sub_version_num=None,start_height=None):
+def version(version,
+            services,
+            timestamp,
+            addr_me,
+            addr_you=None,
+            nonce=None,
+            sub_version_num=None,
+            start_height=None):
+            
   b = buffer_builder()
   
   b.uint32(version)
@@ -303,7 +311,11 @@ class parser:
     
     addr_me = self.helper.addr()
     
-    ret = {'version':version,'services':services,'timestamp':timestamp,'addr_me':addr_me}
+    ret = {'version':version,
+           'services':services,
+           'timestamp':timestamp,
+           'addr_me':addr_me}
+    
     if version < 106:
       return ret
     else:
@@ -311,7 +323,9 @@ class parser:
       nonce = self.helper.read(8)
       sub_version_num = self.helper.null_string()
       
-      ret.update({'addr_you':addr_you,'nonce':nonce,'sub_version_num':sub_version_num})
+      ret.update({'addr_you':addr_you,
+                  'nonce':nonce,
+                  'sub_version_num':sub_version_num})
       
       if version < 209:
         return ret
@@ -381,37 +395,58 @@ class parser:
     for x in range(tx_out_count):
       tx_outs.append(self.parse_txout())
     lock_time = self.helper.uint32()
-    return {'hash':None, 'version':version,'tx_ins':tx_ins,'tx_outs':tx_outs,'lock_time':lock_time}
+    
+    h = hashlib.sha256(
+          hashlib.sha256(
+            tx(
+              version,
+              tx_ins,
+              tx_outs,
+              lock_time
+            )
+          ).digest()
+        ).digest()
+    
+    return {'hash':h,
+            'version':version,
+            'tx_ins':tx_ins,
+            'tx_outs':tx_outs,
+            'lock_time':lock_time}
 
   def parse_block(self):
     version = self.helper.uint32()
     prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)
     timestamp = self.helper.uint32()
-    
-    """
-        //1b012dcd
-        CBigNum& SetCompact(unsigned int nCompact)
-        {
-            unsigned int nSize = nCompact >> 24;//1b (27)
-            std::vector<unsigned char> vch(4 + nSize);//31
-            vch[3] = nSize;
-            if (nSize >= 1) vch[4] = (nCompact >> 16) & 0xff;
-            if (nSize >= 2) vch[5] = (nCompact >> 8) & 0xff;
-            if (nSize >= 3) vch[6] = (nCompact >> 0) & 0xff;
-            BN_mpi2bn(&vch[0], vch.size(), this);
-            return *this;
-        }
-    """
-    
     bits = self.helper.uint32()
     nonce = self.helper.read(4)
     tx_count = self.helper.var_uint()
     txs = []
     for x in range(tx_count):
       txs.append(self.parse_tx())
+    
+    h = hashlib.sha256(
+          hashlib.sha256(
+            block(
+              version,
+              prev_hash,
+              merkle_root,
+              timestamp,
+              bits,
+              nonce,
+              []
+            )
+          ).digest()
+        ).digest()
       
-    return {'hash':None, 'version':version,'prev_hash':prev_hash,'merkle_root':merkle_root,'timestamp':timestamp,'bits':bits,'nonce':nonce,'txs':txs}
+    return {'hash':h,
+            'version':version,
+            'prev_hash':prev_hash,
+            'merkle_root':merkle_root,
+            'timestamp':timestamp,
+            'bits':bits,
+            'nonce':nonce,
+            'txs':txs}
     
   def parse_getaddr(self):
     return {}
