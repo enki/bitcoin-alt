@@ -33,9 +33,6 @@ class reader:
     else:
       checksum = self.buffered_read(4)
     
-    if length > 100*1000:#100 KB
-      raise Exception("Packet is too large")
-    
     p = self.buffered_read(length)
     
     if checksum:

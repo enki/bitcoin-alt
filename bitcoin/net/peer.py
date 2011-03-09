@@ -84,52 +84,96 @@ class Peer(threading.Thread):
     
   def send_version(self):
     with self.slock:
-      p = bitcoin.net.payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
-      bitcoin.net.message.send(self.socket,b'version',p)
+      try:
+        p = bitcoin.net.payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
+        bitcoin.net.message.send(self.socket,b'version',p)
+        return True
+      except socket.error as e:
+        return False
     
   def send_verack(self):
     with self.slock:
-      bitcoin.net.message.send(self.socket,b'verack',b'')
+      try:
+        bitcoin.net.message.send(self.socket,b'verack',b'')
+        return True
+      except socket.error as e:
+        return False
     
   def send_addr(self,addrs):
     with self.slock:
-      p = bitcoin.net.payload.addr(addrs,self.version)
-      bitcoin.net.message.send(self.socket,b'addr',p)
+      try:
+        p = bitcoin.net.payload.addr(addrs,self.version)
+        bitcoin.net.message.send(self.socket,b'addr',p)
+        return True
+      except socket.error as e:
+        return False
       
   def send_inv(self,invs):
     with self.slock:
-      p = bitcoin.net.payload.inv(invs,self.version)
-      bitcoin.net.message.send(self.socket,b'inv',p)
+      try:
+        p = bitcoin.net.payload.inv(invs,self.version)
+        bitcoin.net.message.send(self.socket,b'inv',p)
+        return True
+      except socket.error as e:
+        return False
     
   def send_getaddr(self):
     with self.slock:
-      bitcoin.net.message.send(self.socket,b'getaddr',b'')
+      try:
+        bitcoin.net.message.send(self.socket,b'getaddr',b'')
+        return True
+      except socket.error as e:
+        return False
     
   def send_getdata(self,invs):
     with self.slock:
-      p = bitcoin.net.payload.getdata(invs,self.version)
-      bitcoin.net.message.send(self.socket,b'getdata',p)
+      try:
+        p = bitcoin.net.payload.getdata(invs,self.version)
+        bitcoin.net.message.send(self.socket,b'getdata',p)
+        return True
+      except socket.error as e:
+        return False
       
   def send_getblocks(self,starts,stop):
     with self.slock:
-      p = bitcoin.net.payload.getblocks(self.version,starts,stop)
-      bitcoin.net.message.send(self.socket,b'getblocks',p)
+      try:
+        p = bitcoin.net.payload.getblocks(self.version,starts,stop)
+        bitcoin.net.message.send(self.socket,b'getblocks',p)
+        return True
+      except socket.error as e:
+        return False
       
   def send_getheaders(self,starts,stop):
     with self.slock:
-      p = bitcoin.net.payload.getheaders(self.version,starts,stop)
-      bitcoin.net.message.send(self.socket,b'getheaders',p)
+      try:
+        p = bitcoin.net.payload.getheaders(self.version,starts,stop)
+        bitcoin.net.message.send(self.socket,b'getheaders',p)
+        return True
+      except socket.error as e:
+        return False
       
   def send_block(self,version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
     with self.slock:
-      p = bitcoin.net.payload.block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs)
-      bitcoin.net.message.send(self.socket,b'block',p)
+      try:
+        p = bitcoin.net.payload.block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs)
+        bitcoin.net.message.send(self.socket,b'block',p)
+        return True
+      except socket.error as e:
+        return False
       
   def send_tx(self,tx):
     with self.slock:
-      p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
-      bitcoin.net.message.send(self.socket,b'tx',p)
+      try:
+        p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
+        bitcoin.net.message.send(self.socket,b'tx',p)
+        return True
+      except socket.error as e:
+        return False
     
   def send_ping(self):
     with self.slock:
-      bitcoin.net.message.send(self.socket,b'ping',b'')
+      try:
+        bitcoin.net.message.send(self.socket,b'ping',b'')
+        return True
+      except socket.error as e:
+        return False

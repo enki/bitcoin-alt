@@ -1,4 +1,5 @@
 import threading
+import time
 import queue
 import random
 import sqlite3
@@ -48,18 +49,17 @@ class Node(threading.Thread):
         if self.shutdown.is_set():
           return
 
-  def connect_blocks(self,peer):
+  def connect_blocks(self,peer):    
     try:
       self.storage.connect_blocks()
       heads = self.storage.get_heads()
       tails = self.storage.get_tails()
-      
-      for tail in tails:
-        print(heads,tail)
-        try:
+      try:
+        peer.send_getblocks(heads,b'\x00'*32)
+        for tail in tails:
           peer.send_getblocks(heads,tail)
-        except AttributeError as e:
-          pass#this is raised when no version has yet been received
+      except AttributeError as e:
+        pass#this is raised when no version has yet been received
     except sqlite3.OperationalError as e:
       pass
       
@@ -73,6 +73,7 @@ class Node(threading.Thread):
   
   def handle_inv(self,peer,payload):
     self.connect_blocks(peer)#inv is sent by peers after their resonse to getblocks
+    
     invs = []
     for inv in payload['invs']:
       if inv['type'] == 1:
@@ -102,11 +103,9 @@ class Node(threading.Thread):
     pass
     
   def handle_tx(self,peer,payload):
-    print(payload)
     self.storage.put_tx(payload)
     
   def handle_block(self,peer,payload):
-    print(payload)
     self.storage.put_block(payload)
     
   def handle_headers(self,peer,payload):
