@@ -1,53 +1,4 @@
-import threading
-import time
-import queue
-import random
-import sqlite3
 
-import bitcoin.net.payload
-
-import bitcoin.net.peer
-import bitcoin.storage
-
-class Node(threading.Thread):
-  def __init__(self,cb,peers,shutdown):
-    super(Node,self).__init__()
-    
-    self.cb = cb
-    self.peers = peers
-    
-    self.shutdown = shutdown
-    self.daemon = True
-    
-  def run(self):
-    self.storage = bitcoin.storage.Storage()# this has to be here so that it's created in the same thread as it's used
-    
-    while True:
-      try:
-        event = self.cb.get(True,0.1)
-        
-        peer = event['peer']
-        command = event['command']
-        payload = event['payload']
-        
-        {'connect':self.handle_connect,
-        'addr':self.handle_addr,
-        'inv':self.handle_inv,
-        'getdata':self.handle_getdata,
-        'getblocks':self.handle_getblocks,
-        'getheaders':self.handle_getheaders,
-        'tx':self.handle_tx,
-        'block':self.handle_block,
-        'getaddr':self.handle_getaddr,
-        'alert':self.handle_alert,
-        }[command](peer,payload)
-      except queue.Empty as e:
-        pass
-      except KeyboardInterrupt as e:
-        return
-      finally:
-        if self.shutdown.is_set():
-          return
 
   def connect_blocks(self,peer):    
     try:
@@ -55,7 +6,7 @@ class Node(threading.Thread):
       heads = self.storage.get_heads()
       tails = self.storage.get_tails()
       try:
-        peer.send_getblocks(heads,b'\x00'*32)
+        peer.send_getblocks(heads)
         for tail in tails:
           peer.send_getblocks(heads,tail)
       except AttributeError as e:
@@ -72,8 +23,6 @@ class Node(threading.Thread):
       self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,peer,payload):
-    self.connect_blocks(peer)#inv is sent by peers after their resonse to getblocks
-    
     invs = []
     for inv in payload['invs']:
       if inv['type'] == 1:
@@ -83,8 +32,7 @@ class Node(threading.Thread):
         if not self.storage.get_block(inv['hash']):
           invs.append(inv)
     peer.send_getdata(invs)
-          
-  
+    
   def handle_getdata(self,peer,payload):
     for inv in payload['invs']:
       if inv['type'] == 1:

@@ -3,12 +3,14 @@ import random
 import socket
 import queue
 import threading
+import sqlite3
 
 import bitcoin.net.message
 import bitcoin.net.payload
+import bitcoin.storage
 
 class Peer(threading.Thread):
-  def __init__(self,address,cb,shutdown,addr_me={'services': 1, 'addr': '::ffff:127.0.0.1', 'port': 8333},my_version=32002,my_services=1):
+  def __init__(self,address,peers,shutdown,addr_me={'services': 1, 'addr': '::ffff:127.0.0.1', 'port': 8333},my_version=32002,my_services=1):
     super(Peer,self).__init__()
     
     self.address = address
@@ -25,20 +27,24 @@ class Peer(threading.Thread):
     self.my_version = my_version
     self.my_services = my_services
     
-    self.cb = cb
+    self.peers = peers
     self.slock = threading.Lock()
     self.shutdown = shutdown
     self.daemon = True
     
     self.last_seen = 0
     
-    # possibly this should be in run()
+    # TODO possibly this should be in run()
     self.socket = socket.socket(socket.AF_INET6)
     self.socket.settimeout(5)
     
     self.reader = bitcoin.net.message.reader(self.socket)
     
   def run(self):
+    try:
+      self.storage = bitcoin.storage.Storage()# this has to be here so that it's created in the same thread as it's used
+    except sqlite3.OperationalError as e:
+      pass
     try:
       self.socket.connect(self.address)
       self.socket.settimeout(30)
@@ -66,21 +72,117 @@ class Peer(threading.Thread):
           
       self.last_seen = time.time()
 
-      p = self.parser.parse(command,raw_payload)
+      payload = self.parser.parse(command,raw_payload)
       
-      if command == 'version':
-        self.version = p['version']
-        self.nonce = p['nonce']
-        self.services = p['services']
-        self.send_verack()
-      elif command == 'verack':
-        self.cb.put({'peer':self,'command':'connect','payload':{}})
-      elif command == 'ping':
-        pass
-      elif self.version:
-        self.cb.put({'peer':self,'command':command,'payload':p})
-      else:
+      if command != 'version' and command != 'verack' and not self.version:
         raise Exception("received packet before version")
+             
+      try: 
+        {'version':self.handle_version,
+        'verack':self.handle_verack,
+        'ping':self.handle_ping,
+        'addr':self.handle_addr,
+        'inv':self.handle_inv,
+        'getdata':self.handle_getdata,
+        'getblocks':self.handle_getblocks,
+        'getheaders':self.handle_getheaders,
+        'tx':self.handle_tx,
+        'block':self.handle_block,
+        'getaddr':self.handle_getaddr,
+        'alert':self.handle_alert,
+        }[command](payload)
+      except queue.Empty as e:
+        pass
+      except KeyboardInterrupt as e:
+        return
+      finally:
+        if self.shutdown.is_set():
+          return
+        
+  def handle_version(self,payload):
+    self.version = payload['version']
+    self.nonce = payload['nonce']
+    self.services = payload['services']
+    self.send_verack()
+    
+  def connect_blocks(self):    
+    try:
+      self.storage.connect_blocks()
+      heads = self.storage.get_heads()
+      tails = self.storage.get_tails()
+      try:
+        self.send_getblocks(heads)
+        for tail in tails:
+          self.send_getblocks(heads,tail)
+      except AttributeError as e:
+        pass#this is raised when no version has yet been received
+    except sqlite3.OperationalError as e:
+      pass
+      
+  def handle_verack(self,payload):
+    self.connect_blocks()
+    self.send_getaddr()
+    pass
+      
+  def handle_addr(self,payload):
+    for addr in payload['addrs']:
+      self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
+  
+  def handle_inv(self,payload):
+    self.connect_blocks()
+    invs = []
+    for inv in payload['invs']:
+      if inv['type'] == 1:
+        if not self.storage.get_tx(inv['hash']):
+          invs.append(inv)
+      if inv['type'] == 2:
+        if not self.storage.get_block(inv['hash']):
+          invs.append(inv)
+    self.send_getdata(invs)
+    
+  def handle_getdata(self,payload):
+    for inv in payload['invs']:
+      if inv['type'] == 1:
+        d = self.storage.get_tx(inv['hash'])
+        if d:
+          self.send_tx(d)
+      if inv['type'] == 2:
+        d = self.storage.get_block(inv['hash'])
+        if d:
+          self.send_block(d)
+  
+  def handle_getblocks(self,payload):
+    pass
+    
+  def handle_getheaders(self,payload):
+    pass
+    
+  def handle_tx(self,payload):
+    self.storage.put_tx(payload)
+    
+  def handle_block(self,payload):
+    self.storage.put_block(payload)
+    
+  def handle_headers(self,payload):
+    pass
+    
+  def handle_getaddr(self,payload):
+    pass
+    
+  def handle_checkorder(self,payload):
+    pass
+    
+  def handle_submitorder(self,payload):
+    pass
+    
+  def handle_reply(self,payload):
+    pass
+    
+  def handle_alert(self,payload):
+    pass
+
+  def handle_ping(self,payload):
+    pass
     
   def send_version(self):
     with self.slock:
@@ -134,7 +236,7 @@ class Peer(threading.Thread):
       except socket.error as e:
         return False
       
-  def send_getblocks(self,starts,stop):
+  def send_getblocks(self,starts,stop=b'\x00'*32):
     with self.slock:
       try:
         p = bitcoin.net.payload.getblocks(self.version,starts,stop)
