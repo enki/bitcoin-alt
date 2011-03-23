@@ -6,6 +6,44 @@ import time
 import bitcoin
 import bitcoin.net.payload
 
+from sqlalchemy import create_engine,Table,Column,MetaData,ForeignKey,DateTime,Integer,BigInteger,SmallInteger,Float
+from sqlalchemy.types import BINARY
+from sqlalchemy.orm import mapper,relationship
+from sqlalchemy.ext.orderinglist import ordering_list
+
+engine = create_engine('sqlite:///bitcoin.sqlite3', echo=True)
+metadata = MetaData()
+
+blocks_table = Table('blocks',metadata,
+  Column('id',Integer,primary_key=True),
+  Column('hash',BINARY(32),unique=True),
+  Column('prev_hash',BINARY(32),unique=True),
+  Column('merkle_root',BINARY(32)),
+  Column('timestamp',DateTime,index=True),
+  Column('bits',Integer,index=True),
+  Column('nonce',BINARY(8)),
+  Column('version',SmallInteger),
+  Column('height',Float,nullable=True,index=True),
+)
+
+txs_table = Table('txs',metadata,
+  Column('id',Integer,primary_key=True),
+  Column('hash',BINARY(32),index=True),
+  Column('sequence',Integer,index=True),
+  Column('version',SmallInteger),
+  Column('lock_time',DateTime,index=True),
+  Column('block_id',Integer,ForeignKey('blocks.id'),nullable=True),
+)
+
+tx_ins_table = Table('tx_ins',metadata,
+  Column('id',Integer,primary_key=True),
+  Column('out_hash',BINARY(32),index=True),
+  Column('out_index',Integer),
+  Column('script',BINARY),
+  Column('sequence',Integer),
+  Column('tx_id',Integer,ForeignKey('txs.id')),
+)
+
 tx_outs_table = Table('tx_outs',metadata,
   Column('id',Integer,primary_key=True),
   Column('value',BigInteger,index=True),
@@ -24,6 +62,7 @@ mapper(bitcoin.Tx,txs_table,properties={
   'tx_ins': relationship(bitcoin.TxIn,order_by=[tx_ins_table.c.sequence],collection_class=ordering_list('sequence')),
   'tx_outs': relationship(bitcoin.TxOut,order_by=[tx_outs_table.c.sequence],collection_class=ordering_list('sequence')),
 })
+
 mapper(bitcoin.TxOut,tx_outs_table)
 mapper(bitcoin.TxIn,tx_ins_table)
 
@@ -31,12 +70,6 @@ class Storage:
   genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
   
   def __init__(self):
-    self.db = sqlite3.connect('bitcoin.sqlite3')
-    self.db.row_factory = sqlite3.Row
-    
-    for create_stmt in Storage.create_stmts:
-      self.db.execute(create_stmt)
-    self.db.commit()
     
     self.dlock = threading.RLock()
     self.tx_cache = {}
