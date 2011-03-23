@@ -9,9 +9,9 @@
         peer.send_getblocks(heads)
         for tail in tails:
           peer.send_getblocks(heads,tail)
-      except AttributeError as e:
+      except AttributeError:
         pass#this is raised when no version has yet been received
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
       pass
       
   def handle_connect(self,peer,payload):
