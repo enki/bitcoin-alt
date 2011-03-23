@@ -107,7 +107,8 @@ class Peer(threading.Thread):
     self.services = payload['services']
     self.send_verack()
     
-  def connect_blocks(self):    
+  def connect_blocks(self):
+    print("connect_blocks")
     try:
       self.storage.connect_blocks()
       heads = self.storage.get_heads()
