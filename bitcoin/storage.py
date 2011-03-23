@@ -12,7 +12,8 @@ from sqlalchemy.sql.expression import not_
 from sqlalchemy.orm.exc import NoResultFound
 
 
-engine = create_engine('sqlite:///bitcoin.sqlite3', echo=True)
+#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
+engine = create_engine('sqlite:///bitcoin.sqlite3')
 metadata = MetaData()
 
 blocks_table = Table('blocks',metadata,

@@ -5,12 +5,13 @@ import queue
 import threading
 import sqlite3
 
+import bitcoin
 import bitcoin.net.message
 import bitcoin.net.payload
 import bitcoin.storage
 
 class Peer(threading.Thread):
-  def __init__(self,address,peers,shutdown,addr_me={'services': 1, 'addr': '::ffff:127.0.0.1', 'port': 8333},my_version=32002,my_services=1):
+  def __init__(self,address,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
     super(Peer,self).__init__()
     
     self.address = address
@@ -22,7 +23,7 @@ class Peer(threading.Thread):
       self.my_nonce += bytes([random.randrange(256)])
     
     self.addr_me = addr_me
-    self.addr_you = {'services':1,'addr':address[0],'port':address[1]}
+    self.addr_you = bitcoin.Address(address[0],address[1],1)
     
     self.my_version = my_version
     self.my_services = my_services
