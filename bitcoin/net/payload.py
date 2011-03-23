@@ -2,6 +2,8 @@ import struct
 import socket
 import hashlib
 
+import bitcoin
+
 class buffer_builder:
   def __init__(self):
     self.buffer = b''
