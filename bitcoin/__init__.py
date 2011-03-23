@@ -11,7 +11,7 @@ class Block(object):
     self.merkle_root = merkle_root
     self.timestamp = timestamp
     self.bits = bits
-    self.nonce = none
+    self.nonce = nonce
     self.version = version
     
 class Transaction(object): 

@@ -122,18 +122,21 @@ class Peer(threading.Thread):
       pass
       
   def handle_verack(self,payload):
+    if not self.storage.get_block(self.storage.genesis_hash):
+      print("requesting genesis block")
+      self.send_getblocks([self.storage.genesis_hash])
     self.connect_blocks()
     self.send_getaddr()
     pass
       
   def handle_addr(self,payload):
-    for addr in payload['addrs']:
-      self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
+    for addr in payload:
+      self.peers.add((addr.addr,addr.port))
   
   def handle_inv(self,payload):
     self.connect_blocks()
     invs = []
-    for inv in payload['invs']:
+    for inv in payload:
       if inv['type'] == 1:
         if not self.storage.get_transaction(inv['hash']):
           invs.append(inv)
@@ -143,7 +146,7 @@ class Peer(threading.Thread):
     self.send_getdata(invs)
     
   def handle_getdata(self,payload):
-    for inv in payload['invs']:
+    for inv in payload:
       if inv['type'] == 1:
         d = self.storage.get_transaction(inv['hash'])
         if d:
@@ -163,6 +166,8 @@ class Peer(threading.Thread):
     self.storage.put_transaction(transaction)
     
   def handle_block(self,block):
+    if block.hash == self.storage.genesis_hash:
+      block.height = 1.0
     self.storage.put_block(block)
     
   def handle_headers(self,payload):

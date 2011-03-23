@@ -1,6 +1,7 @@
 import struct
 import socket
 import hashlib
+import datetime
 
 import bitcoin
 
@@ -84,11 +85,12 @@ class buffer_builder:
     self.write(inv['hash'])
     
   def input(self,input):
-    if len(input.out_hash) != 32:
+    print(dir(input))
+    if len(input.output_hash) != 32:
       raise Exception("hash length is wrong")
     
-    self.write(input.out_hash)
-    self.uint32(input.out_index)
+    self.write(input.output_hash)
+    self.uint32(input.output_index)
     self.var_uint(len(input.script))
     self.write(input.script)
     self.uint32(input.sequence)
@@ -183,9 +185,9 @@ def getheaders(version,starts,stop):
   b.write(stop)
   return b.buffer
   
-def tx(transaction):
+def transaction(transaction):
   b = buffer_builder()
-  b.tx(transaction)
+  b.transaction(transaction)
   return b.buffer
   
 def block(block):
@@ -197,7 +199,7 @@ def block(block):
   b.uint32(block.bits)
   b.write(block.nonce)
   for tx in block.transactions:
-    b.tx(tx)
+    b.transaction(tx)
   return b.buffer
 
 class buffer_parser:
@@ -306,7 +308,7 @@ class parser:
     self.version = version
     
     services = self.helper.uint64()
-    timestamp = self.helper.uint64()
+    timestamp = datetime.datetime.fromtimestamp(self.helper.uint64())
     
     addr_me = self.helper.addr()
     
@@ -341,7 +343,7 @@ class parser:
     addrs = []
     for x in range(count):
       if self.version >= 31402:
-        timestamp = self.helper.uint32(4)
+        timestamp = datetime.datetime.fromtimestamp(self.helper.uint32())
         addr = self.helper.addr()
         addrs.append(addr)
       else:
@@ -380,6 +382,7 @@ class parser:
     return bitcoin.TransactionOutput(value,script)
     
   def parse_tx(self):
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
     version = self.helper.uint32()
     tx_in_count = self.helper.var_uint()
     tx_ins = []
@@ -389,32 +392,21 @@ class parser:
     tx_outs = []
     for x in range(tx_out_count):
       tx_outs.append(self.parse_txout())
-    lock_time = self.helper.uint32()
-    
-    h = hashlib.sha256(
-          hashlib.sha256(
-            tx(
-              version,
-              tx_ins,
-              tx_outs,
-              lock_time
-            )
-          ).digest()
-        ).digest()
+    lock_time = datetime.datetime.fromtimestamp(self.helper.uint32())
     
     t = bitcoin.Transaction(h,version,lock_time)
     for tx_in in tx_ins:
       t.inputs.append(tx_in)
     for tx_out in tx_outs:
       t.outputs.append(tx_out)
-      
     return t
 
   def parse_block(self):
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
     version = self.helper.uint32()
     prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)
-    timestamp = self.helper.uint32()
+    timestamp = datetime.datetime.fromtimestamp(self.helper.uint32())
     bits = self.helper.uint32()
     nonce = self.helper.read(4)
     tx_count = self.helper.var_uint()
@@ -422,20 +414,6 @@ class parser:
     for x in range(tx_count):
       txs.append(self.parse_tx())
     
-    h = hashlib.sha256(
-          hashlib.sha256(
-            block(
-              version,
-              prev_hash,
-              merkle_root,
-              timestamp,
-              bits,
-              nonce,
-              []
-            )
-          ).digest()
-        ).digest()
-      
     b = bitcoin.Block(h,prev_hash,merkle_root,timestamp,bits,nonce,version)
     for tx in txs:
       b.transactions.append(tx)

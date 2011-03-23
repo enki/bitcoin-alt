@@ -10,6 +10,7 @@ from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker
 from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy.sql.expression import not_
 from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.exc import IntegrityError
 
 
 #engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
@@ -30,7 +31,7 @@ blocks_table = Table('blocks',metadata,
 
 transactions_table = Table('transactions',metadata,
   Column('id',Integer,primary_key=True),
-  Column('hash',BINARY(32),index=True),
+  Column('hash',BINARY(32),index=True,unique=True),
   Column('sequence',Integer,index=True,nullable=True),
   Column('version',SmallInteger),
   Column('lock_time',DateTime,index=True),
@@ -88,12 +89,12 @@ class Storage(object):
   def get_heads(self):
     with self.dlock:
       c = session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(session.query(bitcoin.Block.prev_hash))))
-      return [h.blockhash for h in c]
+      return [h.hash for h in c]
       
   def get_tails(self):
     with self.dlock:
       c = session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.prev_hash.in_(session.query(bitcoin.Block.hash))))
-      return [h.blockhash for h in c]
+      return [h.hash for h in c]
       
   def connect_blocks(self):
     with self.dlock:
@@ -107,21 +108,29 @@ class Storage(object):
   def get_transaction(self,h):
     with self.dlock:
       try:
-        return session.query(Transaction).filter_by(hash=h).one()
+        return session.query(bitcoin.Transaction).filter_by(hash=h).one()
       except NoResultFound:
         return None
       
   def get_block(self,h):
     with self.dlock:
       try:
-        return session.query(Block).filter_by(hash=h)
+        return session.query(bitcoin.Block).filter_by(hash=h).one()
       except NoResultFound:
         return None
     
   def put_transaction(self,transaction):
     with self.dlock:
       session.add(transaction)
+      try:
+        session.commit()
+      except IntegrityError as e:
+        pass
     
   def put_block(self,block):
     with self.dlock:
       session.add(block)
+      try:
+        session.commit()
+      except IntegrityError as e:
+        pass
