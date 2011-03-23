@@ -58,6 +58,7 @@ class Peer(threading.Thread):
         return
       else:
         raise e
+        
     while True:
       try:
         command,raw_payload = self.reader.read()
@@ -133,7 +134,7 @@ class Peer(threading.Thread):
     invs = []
     for inv in payload['invs']:
       if inv['type'] == 1:
-        if not self.storage.get_tx(inv['hash']):
+        if not self.storage.get_transaction(inv['hash']):
           invs.append(inv)
       if inv['type'] == 2:
         if not self.storage.get_block(inv['hash']):
@@ -143,7 +144,7 @@ class Peer(threading.Thread):
   def handle_getdata(self,payload):
     for inv in payload['invs']:
       if inv['type'] == 1:
-        d = self.storage.get_tx(inv['hash'])
+        d = self.storage.get_transaction(inv['hash'])
         if d:
           self.send_tx(d)
       if inv['type'] == 2:
@@ -157,11 +158,11 @@ class Peer(threading.Thread):
   def handle_getheaders(self,payload):
     pass
     
-  def handle_tx(self,payload):
-    self.storage.put_tx(payload)
+  def handle_tx(self,transaction):
+    self.storage.put_transaction(transaction)
     
-  def handle_block(self,payload):
-    self.storage.put_block(payload)
+  def handle_block(self,block):
+    self.storage.put_block(block)
     
   def handle_headers(self,payload):
     pass

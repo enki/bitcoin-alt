@@ -1,7 +1,8 @@
 class Address(object):
-  def __init__(self,host,port):
-    self.host = host
+  def __init__(self,addr,port,services=1):
+    self.addr = addr
     self.port = port
+    self.services = services
 
 class Block(object):
   def __init__(self,block_hash,prev_hash,merkle_root,timestamp,bits,nonce,version):
@@ -13,23 +14,23 @@ class Block(object):
     self.nonce = none
     self.version = version
     
-class Tx(object): 
-  def __init__(self,tx_hash,sequence,version,lock_time):
+class Transaction(object): 
+  def __init__(self,tx_hash,version,lock_time):
     self.hash = tx_hash
-    self.sequence = sequence
     self.version = version
     self.lock_time = lock_time
     
-    self.tx_ins = []
-    self.tx_outs = []
+    self.inputs = []
+    self.outputs = []
 
-class TxOut(object): 
+class TransactionOutput(object): 
   def __init__(self,value,script):
     self.value = value
     self.script = script
   
-class TxIn(object):  
-  def __init__(self,out_hash,out_index,script):
-    self.out_hash = out_hash
-    self.out_index = out_index
+class TransactionInput(object):  
+  def __init__(self,out_hash,out_index,script,sequence):
+    self.output_hash = out_hash
+    self.output_index = out_index
     self.script = script
+    self.sequence = sequence

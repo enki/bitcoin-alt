@@ -1,6 +1,4 @@
-import sqlite3
 import threading
-import hashlib
 import time
 
 import bitcoin
@@ -8,8 +6,11 @@ import bitcoin.net.payload
 
 from sqlalchemy import create_engine,Table,Column,MetaData,ForeignKey,DateTime,Integer,BigInteger,SmallInteger,Float
 from sqlalchemy.types import BINARY
-from sqlalchemy.orm import mapper,relationship
+from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker
 from sqlalchemy.ext.orderinglist import ordering_list
+from sqlalchemy.sql.expression import not_
+from sqlalchemy.orm.exc import NoResultFound
+
 
 engine = create_engine('sqlite:///bitcoin.sqlite3', echo=True)
 metadata = MetaData()
@@ -17,7 +18,7 @@ metadata = MetaData()
 blocks_table = Table('blocks',metadata,
   Column('id',Integer,primary_key=True),
   Column('hash',BINARY(32),unique=True),
-  Column('prev_hash',BINARY(32),unique=True),
+  Column('prev_hash',BINARY(32),ForeignKey('blocks.hash'),nullable=True,unique=True),
   Column('merkle_root',BINARY(32)),
   Column('timestamp',DateTime,index=True),
   Column('bits',Integer,index=True),
@@ -26,57 +27,57 @@ blocks_table = Table('blocks',metadata,
   Column('height',Float,nullable=True,index=True),
 )
 
-txs_table = Table('txs',metadata,
+transactions_table = Table('transactions',metadata,
   Column('id',Integer,primary_key=True),
   Column('hash',BINARY(32),index=True),
-  Column('sequence',Integer,index=True),
+  Column('sequence',Integer,index=True,nullable=True),
   Column('version',SmallInteger),
   Column('lock_time',DateTime,index=True),
+  Column('position',Integer,index=True,nullable=True),
   Column('block_id',Integer,ForeignKey('blocks.id'),nullable=True),
 )
 
-tx_ins_table = Table('tx_ins',metadata,
+transaction_inputs_table = Table('transaction_inputs',metadata,
   Column('id',Integer,primary_key=True),
-  Column('out_hash',BINARY(32),index=True),
-  Column('out_index',Integer),
+  Column('output_hash',BINARY(32),index=True),
+  Column('output_index',Integer),
   Column('script',BINARY),
   Column('sequence',Integer),
-  Column('tx_id',Integer,ForeignKey('txs.id')),
+  Column('position',Integer),
+  Column('transaction_id',Integer,ForeignKey('transactions.id')),
 )
 
-tx_outs_table = Table('tx_outs',metadata,
+transaction_outputs_table = Table('transaction_outputs',metadata,
   Column('id',Integer,primary_key=True),
   Column('value',BigInteger,index=True),
   Column('script',BINARY),
-  Column('sequence',Integer),
-  Column('tx_id',Integer,ForeignKey('txs.id')),
+  Column('position',Integer),
+  Column('transaction_id',Integer,ForeignKey('transactions.id')),
 )
 
 metadata.create_all(engine)
 
 mapper(bitcoin.Block,blocks_table,properties={
   'prev_block': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.prev_hash),
-  'txs': relationship(bitcoin.Tx,order_by=[txs_table.c.sequence],collection_class=ordering_list('sequence')),
+  'next_blocks': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.hash),
+  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.sequence],collection_class=ordering_list('position')),
 })
-mapper(bitcoin.Tx,txs_table,properties={
-  'tx_ins': relationship(bitcoin.TxIn,order_by=[tx_ins_table.c.sequence],collection_class=ordering_list('sequence')),
-  'tx_outs': relationship(bitcoin.TxOut,order_by=[tx_outs_table.c.sequence],collection_class=ordering_list('sequence')),
+mapper(bitcoin.Transaction,transactions_table,properties={
+  'inputs': relationship(bitcoin.TransactionInput,order_by=[transaction_inputs_table.c.position],collection_class=ordering_list('position')),
+  'outputs': relationship(bitcoin.TransactionOutput,order_by=[transaction_outputs_table.c.position],collection_class=ordering_list('position')),
 })
 
-mapper(bitcoin.TxOut,tx_outs_table)
-mapper(bitcoin.TxIn,tx_ins_table)
+mapper(bitcoin.TransactionOutput,transaction_outputs_table)
+mapper(bitcoin.TransactionInput,transaction_inputs_table)
 
-class Storage:
+session = scoped_session(sessionmaker(bind=engine))
+
+class Storage(object):
   genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
   
   def __init__(self):
     
     self.dlock = threading.RLock()
-    self.tx_cache = {}
-    self.block_cache = {}
-    
-    #self.put_block(Storage.genesis_block)
-    #self.set_height(Storage.genesis_block['hash'],self.difficulty(Storage.genesis_block['bits']))
 
   def difficulty(self,bits):
     target = (bits & 0x00ffffff)*(2**(8*((bits >> 24) - 3))) 
@@ -85,170 +86,41 @@ class Storage:
     
   def get_heads(self):
     with self.dlock:
-      self.flush_tx_cache()
-      self.flush_block_cache()
-      
-      c = self.db.execute('SELECT hash FROM blocks WHERE height IS NOT NULL AND hash NOT IN (SELECT prev_hash FROM blocks)')
-      return [h[0] for h in c.fetchall()]
+      c = session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(session.query(bitcoin.Block.prev_hash))))
+      return [h.blockhash for h in c]
       
   def get_tails(self):
     with self.dlock:
-      self.flush_tx_cache()
-      self.flush_block_cache()
+      c = session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.prev_hash.in_(session.query(bitcoin.Block.hash))))
+      return [h.blockhash for h in c]
       
-      c = self.db.execute('SELECT hash FROM blocks WHERE height IS NULL AND prev_hash NOT IN (SELECT hash FROM blocks)')
-      return [h[0] for h in c.fetchall()]
-      
-  def set_height(self,h,height):
-    with self.dlock:
-      self.flush_tx_cache()
-      self.flush_block_cache()
-      
-      c = self.db.execute('UPDATE blocks SET height=? WHERE hash=?',(height,h))
-      self.db.commit()
-  
   def connect_blocks(self):
     with self.dlock:
-      self.flush_tx_cache()
-      self.flush_block_cache()
-      
-      c = self.db.execute('SELECT * FROM blocks WHERE height IS NULL AND prev_hash IN (SELECT hash FROM blocks WHERE height IS NOT NULL)')
-      to_update = {}
-      start_blocks = c.fetchall()
-      
-      for start_block in start_blocks:
-        block = dict(start_block)
-        while block:
-          if block['prev_hash'] in to_update:
-            prev_block = to_update[block['prev_hash']]
-          else:
-            prev_block = self.get_block(block['prev_hash'])
-          
-          block['height'] = self.difficulty(block['bits']) + prev_block['height']
-          to_update[block['hash']] = block
-              
-          block = self.get_next_block(block['hash'])# TODO this will break if the block chain splits
-      
-      self.db.executemany('UPDATE blocks SET height=? WHERE hash=?',[(b['height'],b['hash']) for h,b in to_update.items()])
-      self.db.commit()
-      
+      heads = self.get_heads()
+      while heads:
+        for head in heads:
+          head.next_block.height = head.height + self.difficulty(head.next_block.bits)
+        heads = self.get_heads()
+      session.commit()
   
-  def get_tx(self,h):
+  def get_transaction(self,h):
     with self.dlock:
-      if h in self.tx_cache:
-        return self.tx_cache[h]
-      else:
-        c = self.db.execute('SELECT * FROM txs WHERE hash=?',(h,))
-        r = c.fetchone()
-        if r:
-          tx = {}
-          tx['hash'] = h
-          tx['version'] = r['version']
-          tx['lock_time'] = r['lock_time']
-          tx['block_hash'] = r['block']
-          tx['tx_ins'] = []
-          tx['tx_outs'] = []
-          
-          c = self.db.execute('SELECT * FROM tx_ins WHERE tx=?',(h,))
-          rows = c.fetchall()
-          
-          for r in rows:
-            tx_in = {}
-            tx_in['outpoint'] = {'out_index':r['out_index'],'out_hash':r['out_hash']}
-            tx_in['script'] = r['script']
-            tx_in['sequence'] = r['sequence']
-            tx['tx_ins'].append(tx_in)
-            
-          c = self.db.execute('SELECT * FROM tx_outs WHERE tx=?',(h,))
-          rows = c.fetchall()
-          
-          for r in rows:
-            tx_out = {}
-            tx_out['value'] = r['value']
-            tx_out['pk_script'] = r['script']
-            tx['tx_outs'].append(tx_out)
-          
-          return tx
-        else:
-          return None
-        
+      try:
+        return session.query(Transaction).filter_by(hash=h).one()
+      except NoResultFound:
+        return None
+      
   def get_block(self,h):
     with self.dlock:
-      if h in self.block_cache:
-        return self.block_cache[h]
-      else:
-        c = self.db.execute('SELECT * FROM blocks WHERE hash=?',(h,))
-        r = c.fetchone()
-        if r:
-          return dict(r)
-        else:
-          return None
-        
-  def get_next_block(self,h):
-    with self.dlock:
-      self.flush_tx_cache()
-      self.flush_block_cache()
-      
-      c = self.db.execute('SELECT * FROM blocks WHERE prev_hash=?',(h,))
-      r = c.fetchone()
-      if r:
-        return dict(r)
-      else:
+      try:
+        return session.query(Block).filter_by(hash=h)
+      except NoResultFound:
         return None
     
-  def put_tx(self,tx,sequence=None,block=None):
+  def put_transaction(self,transaction):
     with self.dlock:
-      tx['block'] = block
-      tx['sequence'] = sequence
-      
-      if tx['hash'] not in self.tx_cache:
-        self.tx_cache[tx['hash']] = tx
-  
-  def flush_tx_cache(self):
-    with self.dlock:
-      tx_insert_stmt = """INSERT OR IGNORE INTO txs(version,lock_time,hash,block,sequence)
-                          VALUES (:version,:lock_time,:hash,:block,:sequence)"""
-      
-      txins_insert_stmt = """INSERT OR IGNORE INTO tx_ins(tx,out_hash,out_index,script,sequence)
-                             VALUES(:hash,:out_hash,:out_index,:script,:sequence)"""
-      
-      txouts_insert_stmt = """INSERT OR IGNORE INTO tx_outs(tx,value,script)
-                              VALUES(:hash,:value,:pk_script)"""
-                              
-      if len(self.tx_cache) > 0:
-        c = self.db.cursor()
-        for h,tx in self.tx_cache.items():
-          c.execute(tx_insert_stmt,tx)
-          for tx_in in tx['tx_ins']:
-            tx_in['hash'] = tx['hash']
-            tx_in['out_hash'] = tx_in['outpoint']['out_hash']
-            tx_in['out_index'] = tx_in['outpoint']['out_index']
-            c.execute(txins_insert_stmt,tx_in)
-          for tx_out in tx['tx_outs']:
-            tx_out['hash'] = tx['hash']
-            c.execute(txouts_insert_stmt,tx_out)
-        
-        self.db.commit()
-        self.tx_cache = {}
+      session.add(transaction)
     
   def put_block(self,block):
     with self.dlock:
-      if len(block['txs']) > 0:
-        sequence = 0
-        for tx in block['txs']:
-          self.put_tx(tx,sequence,block['hash'])#the sequence tells us the order for merkle tree
-          sequence += 1
-          
-      if block['hash'] not in self.block_cache:
-        self.block_cache[block['hash']] = block
-      
-  def flush_block_cache(self):
-    with self.dlock:
-      block_insert_stmt = """INSERT OR IGNORE INTO blocks(version,prev_hash,merkle_root,timestamp,bits,nonce,hash,height)
-                             VALUES(:version,:prev_hash,:merkle_root,:timestamp,:bits,:nonce,:hash,NULL)"""
-                             
-      if len(self.block_cache) > 0:
-        c = self.db.cursor()
-        c.executemany(block_insert_stmt,[v for k,v in self.block_cache.items()])
-        self.db.commit()
-        self.block_cache = {}
+      session.add(block)
