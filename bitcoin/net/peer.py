@@ -40,6 +40,8 @@ class Peer(threading.Thread):
     
     self.reader = bitcoin.net.message.reader(self.socket)
     
+    self.requested_heads = set()
+    
   def run(self):
     try:
       self.storage = bitcoin.storage.Storage()# this has to be here so that it's created in the same thread as it's used
@@ -111,7 +113,10 @@ class Peer(threading.Thread):
       heads = self.storage.get_heads()
       tails = self.storage.get_tails()
       try:
-        self.send_getblocks(heads)
+        heads = set(heads).difference(self.requested_heads)
+        if heads:
+          self.send_getblocks(heads)
+          self.requested_heads.update(heads)
         for tail in tails:
           self.send_getblocks(heads,tail)
       except AttributeError as e:
@@ -122,14 +127,12 @@ class Peer(threading.Thread):
   def handle_verack(self,payload):
     self.connect_blocks()
     self.send_getaddr()
-    pass
       
   def handle_addr(self,payload):
     for addr in payload['addrs']:
       self.peers.add((addr['node_addr']['addr'],addr['node_addr']['port']))
   
   def handle_inv(self,payload):
-    self.connect_blocks()
     invs = []
     for inv in payload['invs']:
       if inv['type'] == 1:
@@ -138,7 +141,13 @@ class Peer(threading.Thread):
       if inv['type'] == 2:
         if not self.storage.get_block(inv['hash']):
           invs.append(inv)
+    
+    if payload['invs'][-1]['hash'] not in self.requested_heads:
+      self.requested_heads.add(payload['invs'][-1]['hash'])
+      self.send_getblocks([payload['invs'][-1]['hash']])
+    
     self.send_getdata(invs)
+    self.connect_blocks()
     
   def handle_getdata(self,payload):
     for inv in payload['invs']:

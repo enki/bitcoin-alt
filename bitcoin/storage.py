@@ -31,8 +31,8 @@ class Storage:
     self.tx_cache = {}
     self.block_cache = {}
     
-    #self.put_block(Storage.genesis_block)
-    #self.set_height(Storage.genesis_block['hash'],self.difficulty(Storage.genesis_block['bits']))
+    self.put_block(Storage.genesis_block)
+    self.set_height(Storage.genesis_block['hash'],self.difficulty(Storage.genesis_block['bits']))
 
   def difficulty(self,bits):
     target = (bits & 0x00ffffff)*(2**(8*((bits >> 24) - 3))) 
