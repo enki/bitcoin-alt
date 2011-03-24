@@ -34,7 +34,7 @@ class Peer(threading.Thread):
     self.my_services = my_services
     
     self.peers = peers
-    self.slock = threading.Lock()
+    self.socket_lock = threading.Lock()
     self.shutdown = shutdown
     self.daemon = True
     
@@ -44,12 +44,14 @@ class Peer(threading.Thread):
     self.socket = socket.socket(socket.AF_INET6)
     self.socket.settimeout(5)
     
-    self.genesis_block = None
-    
     self.reader = bitcoin.net.message.reader(self.socket)
     
     self.session = scoped_session(sessionmaker(bind=bitcoin.storage.engine))
     self.session.execute("PRAGMA synchronous=OFF;")
+    
+    self.requested_heads = set()
+    self.requested_blocks = set()
+    self.requested_transactions = set()
     
   def run(self):
     try:
@@ -73,9 +75,11 @@ class Peer(threading.Thread):
         self.send_ping()
         continue
       except socket.error as e:
+        self.session.commit()
         return
       finally:
         if self.shutdown.is_set():
+          self.session.commit()
           return
           
       self.last_seen = time.time()
@@ -101,44 +105,36 @@ class Peer(threading.Thread):
         }[command](payload)
       except queue.Empty as e:
         pass
-      except KeyboardInterrupt as e:
-        return
       finally:
         if self.shutdown.is_set():
+          self.session.commit()
           return
-          
-  def difficulty(self,bits):
-    target = (bits & 0x00ffffff)*(2**(8*((bits >> 24) - 3))) 
-    max_target = 0x00000000ffff0000000000000000000000000000000000000000000000000000
-    return max_target/target
 
   def get_heads(self):
-    return self.session.query(bitcoin.Block.hash).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash)))).all()
+    return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
       
   def get_tails(self):
-    return self.session.query(bitcoin.Block.hash).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
+    return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
       
   def connect_blocks(self):
     try:
-      heads = set(self.get_heads())
+      heads = self.get_heads()
       for head in heads:
         self.connect_head(head)
       self.session.commit()
-      heads = self.get_heads()
-      try:
-        if heads:
-          self.send_getblocks(heads)
-      except AttributeError as e:
-        pass#this is raised when no version has yet been received
-    except IntegrityError as e:
-      self.session.rollback() # TODO this requires the otherside to retransmit....
+      heads = set((head.hash for head in self.get_heads())).difference(self.requested_heads)
+      if heads:
+        self.requested_heads.update(heads)
+        self.send_getblocks(heads)
     except OperationalError as e:
       self.session.rollback()
   
   def connect_head(self,head):
-    for next_block in head.next_blocks:
-      next_block.height = head.height + difficulty(next_block.bits)
-      self.connect_head(next_block)
+    if head.next_blocks:
+      for next_block in head.next_blocks:
+        next_block.height = head.height + next_block.difficulty()
+        self.session.add(next_block)
+        self.connect_head(next_block)
         
   def handle_version(self,payload):
     self.version = payload['version']
@@ -150,31 +146,38 @@ class Peer(threading.Thread):
     try:
       genesis_block = self.session.query(bitcoin.Block).filter_by(hash=bitcoin.storage.genesis_hash).one()
     except NoResultFound as e:
+      self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
       self.send_getblocks([bitcoin.storage.genesis_hash])
     
-    self.connect_blocks()
     self.send_getaddr()
+    self.connect_blocks()
       
   def handle_addr(self,payload):
     for addr in payload:
       self.peers.add((addr.addr,addr.port))
   
   def handle_inv(self,payload):
-    self.connect_blocks()
     invs = []
     for inv in payload:
       if inv['type'] == 1:
         try:
           self.session.query(bitcoin.Transaction).filter_by(hash=inv['hash']).one()
         except NoResultFound as e:
-          invs.append(inv)
+          if inv['hash'] not in self.requested_transactions:
+            self.requested_transactions.add(inv['hash'])
+            invs.append(inv)
       if inv['type'] == 2:
         try:
           self.session.query(bitcoin.Block).filter_by(hash=inv['hash']).one()
         except NoResultFound as e:
-          invs.append(inv)
+          if inv['hash'] not in self.requested_blocks:
+            self.requested_blocks.add(inv['hash'])
+            invs.append(inv)
+    
     if invs:
       self.send_getdata(invs)
+    
+    self.connect_blocks()
     
   def handle_getdata(self,payload):
     for inv in payload:
@@ -200,25 +203,39 @@ class Peer(threading.Thread):
     pass
     
   def handle_tx(self,transaction):
-    self.session.add(transaction)
     try:
+      transaction = self.session.merge(transaction)
+      self.session.add(transaction)
       self.session.commit()
     except IntegrityError as e:
-      self.session.rollback()
-    except OperationalError as e:
-      self.session.rollback()
+      print("Rollback transaction ",transaction.hash)
+      self.session.rollback()# TODO this just forces the other peer to retransmit...
+    finally:
+      try:
+        self.requested_transactions.remove(transaction.hash)
+      except KeyError as e:
+        pass
     
   def handle_block(self,block):
-    print(block.hash)
-    if block.hash == bitcoin.storage.genesis_hash:
-      block.height = 1.0
-    self.session.add(block)
     try:
+      if block.hash == bitcoin.storage.genesis_hash:
+        block.height = 1.0
+      
+      block = self.session.merge(block)
       self.session.commit()
     except IntegrityError as e:
       self.session.rollback()
-    except OperationalError as e:
-      self.session.rollback()
+      try:
+        block = self.session.merge(block)
+        self.session.commit()
+      except IntegrityError as e:
+        print("Rollback block ",block.hash)
+        self.session.rollback()
+    finally:
+      try:
+        self.requested_blocks.remove(block.hash)
+      except KeyError as e:
+        pass
     
   def handle_headers(self,payload):
     pass
@@ -242,7 +259,7 @@ class Peer(threading.Thread):
     pass
     
   def send_version(self):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
         bitcoin.net.message.send(self.socket,b'version',p)
@@ -251,7 +268,7 @@ class Peer(threading.Thread):
         return False
     
   def send_verack(self):
-    with self.slock:
+    with self.socket_lock:
       try:
         bitcoin.net.message.send(self.socket,b'verack',b'')
         return True
@@ -259,7 +276,7 @@ class Peer(threading.Thread):
         return False
     
   def send_addr(self,addrs):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.addr(addrs,self.version)
         bitcoin.net.message.send(self.socket,b'addr',p)
@@ -268,7 +285,7 @@ class Peer(threading.Thread):
         return False
       
   def send_inv(self,invs):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.inv(invs,self.version)
         bitcoin.net.message.send(self.socket,b'inv',p)
@@ -277,7 +294,7 @@ class Peer(threading.Thread):
         return False
     
   def send_getaddr(self):
-    with self.slock:
+    with self.socket_lock:
       try:
         bitcoin.net.message.send(self.socket,b'getaddr',b'')
         return True
@@ -285,7 +302,7 @@ class Peer(threading.Thread):
         return False
     
   def send_getdata(self,invs):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.getdata(invs,self.version)
         bitcoin.net.message.send(self.socket,b'getdata',p)
@@ -294,7 +311,8 @@ class Peer(threading.Thread):
         return False
       
   def send_getblocks(self,starts,stop=b'\x00'*32):
-    with self.slock:
+    #print("send_getblocks",starts,stop)
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.getblocks(self.version,starts,stop)
         bitcoin.net.message.send(self.socket,b'getblocks',p)
@@ -303,7 +321,7 @@ class Peer(threading.Thread):
         return False
       
   def send_getheaders(self,starts,stop):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.getheaders(self.version,starts,stop)
         bitcoin.net.message.send(self.socket,b'getheaders',p)
@@ -312,7 +330,7 @@ class Peer(threading.Thread):
         return False
       
   def send_block(self,version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs)
         bitcoin.net.message.send(self.socket,b'block',p)
@@ -321,7 +339,7 @@ class Peer(threading.Thread):
         return False
       
   def send_tx(self,tx):
-    with self.slock:
+    with self.socket_lock:
       try:
         p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
         bitcoin.net.message.send(self.socket,b'tx',p)
@@ -330,7 +348,7 @@ class Peer(threading.Thread):
         return False
     
   def send_ping(self):
-    with self.slock:
+    with self.socket_lock:
       try:
         bitcoin.net.message.send(self.socket,b'ping',b'')
         return True

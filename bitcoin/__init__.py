@@ -14,6 +14,13 @@ class Block(object):
     self.nonce = nonce
     self.version = version
     
+  def target(self):
+    return (self.bits & 0x00ffffff)*(2**(8*((self.bits >> 24) - 3)))
+    
+  def difficulty(self):
+    max_target = 0x00000000ffff0000000000000000000000000000000000000000000000000000
+    return max_target/self.target()
+    
 class Transaction(object): 
   def __init__(self,tx_hash,version,lock_time):
     self.hash = tx_hash

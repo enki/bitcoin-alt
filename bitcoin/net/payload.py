@@ -1,7 +1,6 @@
 import struct
 import socket
 import hashlib
-import datetime
 
 import bitcoin
 
@@ -307,7 +306,7 @@ class parser:
     self.version = version
     
     services = self.helper.uint64()
-    timestamp = datetime.datetime.fromtimestamp(self.helper.uint64())
+    timestamp = self.helper.uint64()
     
     addr_me = self.helper.addr()
     
@@ -342,7 +341,7 @@ class parser:
     addrs = []
     for x in range(count):
       if self.version >= 31402:
-        timestamp = datetime.datetime.fromtimestamp(self.helper.uint32())
+        timestamp = self.helper.uint32()
         addr = self.helper.addr()
         addrs.append(addr)
       else:
@@ -391,7 +390,7 @@ class parser:
     tx_outs = []
     for x in range(tx_out_count):
       tx_outs.append(self.parse_txout())
-    lock_time = datetime.datetime.fromtimestamp(self.helper.uint32())
+    lock_time = self.helper.uint32()
     
     t = bitcoin.Transaction(h,version,lock_time)
     for tx_in in tx_ins:
@@ -405,7 +404,7 @@ class parser:
     version = self.helper.uint32()
     prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)
-    timestamp = datetime.datetime.fromtimestamp(self.helper.uint32())
+    timestamp = self.helper.uint32()
     bits = self.helper.uint32()
     nonce = self.helper.read(4)
     tx_count = self.helper.var_uint()

@@ -6,21 +6,21 @@ import bitcoin.net.payload
 
 from sqlalchemy import create_engine,Table,Column,MetaData,ForeignKey,DateTime,Integer,BigInteger,SmallInteger,Float
 from sqlalchemy.types import BINARY
-from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker
+from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker,backref
 from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
 
 
-#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
-engine = create_engine('sqlite:///bitcoin.sqlite3')
+engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
+#engine = create_engine('sqlite:///bitcoin.sqlite3')
 metadata = MetaData()
 
 blocks_table = Table('blocks',metadata,
   Column('hash',BINARY(32),unique=True,primary_key=True),
   Column('prev_hash',BINARY(32),ForeignKey('blocks.hash'),nullable=True),
   Column('merkle_root',BINARY(32)),
-  Column('timestamp',DateTime,index=True),
+  Column('timestamp',Integer,index=True),
   Column('bits',Integer,index=True),
   Column('nonce',BINARY(8)),
   Column('version',SmallInteger),
@@ -31,7 +31,7 @@ transactions_table = Table('transactions',metadata,
   Column('hash',BINARY(32),index=True,primary_key=True),
   Column('sequence',Integer,index=True,nullable=True),
   Column('version',SmallInteger),
-  Column('lock_time',DateTime,index=True),
+  Column('lock_time',Integer,index=True),
   Column('position',Integer,index=True,nullable=True),
   Column('block_hash',Integer,ForeignKey('blocks.hash'),nullable=True),
 )
@@ -57,8 +57,7 @@ transaction_outputs_table = Table('transaction_outputs',metadata,
 metadata.create_all(engine)
 
 mapper(bitcoin.Block,blocks_table,properties={
-  'prev_block': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.prev_hash),
-  'next_blocks': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.hash),
+  'prev_block': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.hash,backref=backref('next_blocks')),
   'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.sequence],collection_class=ordering_list('position')),
 })
 mapper(bitcoin.Transaction,transactions_table,properties={
