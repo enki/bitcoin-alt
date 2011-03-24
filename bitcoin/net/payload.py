@@ -380,7 +380,7 @@ class parser:
     return bitcoin.TransactionOutput(value,script)
     
   def parse_tx(self):
-    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
+    start = self.helper.offset
     version = self.helper.uint32()
     tx_in_count = self.helper.var_uint()
     tx_ins = []
@@ -391,6 +391,10 @@ class parser:
     for x in range(tx_out_count):
       tx_outs.append(self.parse_txout())
     lock_time = self.helper.uint32()
+    
+    end = self.helper.offset
+    
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer[start:end]).digest()).digest()
     
     t = bitcoin.Transaction(h,version,lock_time)
     for tx_in in tx_ins:

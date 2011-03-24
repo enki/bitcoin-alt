@@ -117,11 +117,11 @@ class Peer(threading.Thread):
     return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
       
   def connect_blocks(self):
+    print("connect_blocks")
     try:
       heads = self.get_heads()
       for head in heads:
         self.connect_head(head)
-      self.session.commit()
       heads = set((head.hash for head in self.get_heads())).difference(self.requested_heads)
       if heads:
         self.requested_heads.update(heads)
@@ -157,23 +157,29 @@ class Peer(threading.Thread):
       self.peers.add((addr.addr,addr.port))
   
   def handle_inv(self,payload):
+    print("handle_inv")
+    self.session.commit()
     invs = []
+    start = time.time()
     for inv in payload:
       if inv['type'] == 1:
         try:
-          self.session.query(bitcoin.Transaction).filter_by(hash=inv['hash']).one()
+          self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==inv['hash']).one()
         except NoResultFound as e:
           if inv['hash'] not in self.requested_transactions:
             self.requested_transactions.add(inv['hash'])
             invs.append(inv)
       if inv['type'] == 2:
         try:
-          self.session.query(bitcoin.Block).filter_by(hash=inv['hash']).one()
+          self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==inv['hash']).one()
         except NoResultFound as e:
           if inv['hash'] not in self.requested_blocks:
             self.requested_blocks.add(inv['hash'])
             invs.append(inv)
-    
+
+    end = time.time()
+    print((end-start)/len(payload))
+    print(end-start)
     if invs:
       self.send_getdata(invs)
     
@@ -206,10 +212,11 @@ class Peer(threading.Thread):
     try:
       transaction = self.session.merge(transaction)
       self.session.add(transaction)
-      self.session.commit()
     except IntegrityError as e:
-      print("Rollback transaction ",transaction.hash)
-      self.session.rollback()# TODO this just forces the other peer to retransmit...
+      self.session.rollback()
+    except OperationalError as e:
+      self.session.rollback()
+      self.handle_tx(transaction)
     finally:
       try:
         self.requested_transactions.remove(transaction.hash)
@@ -220,17 +227,13 @@ class Peer(threading.Thread):
     try:
       if block.hash == bitcoin.storage.genesis_hash:
         block.height = 1.0
-      
       block = self.session.merge(block)
-      self.session.commit()
+      self.session.add(block)
     except IntegrityError as e:
       self.session.rollback()
-      try:
-        block = self.session.merge(block)
-        self.session.commit()
-      except IntegrityError as e:
-        print("Rollback block ",block.hash)
-        self.session.rollback()
+    except OperationalError as e:
+      self.session.rollback()
+      self.handle_block(block)
     finally:
       try:
         self.requested_blocks.remove(block.hash)
@@ -311,7 +314,7 @@ class Peer(threading.Thread):
         return False
       
   def send_getblocks(self,starts,stop=b'\x00'*32):
-    #print("send_getblocks",starts,stop)
+    print("send_getblocks",starts,stop)
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.getblocks(self.version,starts,stop)
