@@ -85,7 +85,6 @@ class buffer_builder:
     self.write(inv['hash'])
     
   def input(self,input):
-    print(dir(input))
     if len(input.output_hash) != 32:
       raise Exception("hash length is wrong")
     
@@ -402,7 +401,7 @@ class parser:
     return t
 
   def parse_block(self):
-    h = hashlib.sha256(hashlib.sha256(self.helper.buffer).digest()).digest()
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer[:4+32+32+4+4+4]).digest()).digest()
     version = self.helper.uint32()
     prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)

@@ -13,6 +13,7 @@ import bitcoin.storage
 from sqlalchemy.sql.expression import not_
 from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.exc import IntegrityError,OperationalError
 
 class Peer(threading.Thread):
   def __init__(self,address,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
@@ -118,15 +119,21 @@ class Peer(threading.Thread):
     return self.session.query(bitcoin.Block.hash).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
       
   def connect_blocks(self):
-    heads = set(self.get_heads())
-    for head in heads:
-      self.connect_head(head)
-    self.session.commit()
-    heads = self.get_heads()
     try:
-      self.send_getblocks(heads)
-    except AttributeError as e:
-      pass#this is raised when no version has yet been received
+      heads = set(self.get_heads())
+      for head in heads:
+        self.connect_head(head)
+      self.session.commit()
+      heads = self.get_heads()
+      try:
+        if heads:
+          self.send_getblocks(heads)
+      except AttributeError as e:
+        pass#this is raised when no version has yet been received
+    except IntegrityError as e:
+      self.session.rollback() # TODO this requires the otherside to retransmit....
+    except OperationalError as e:
+      self.session.rollback()
   
   def connect_head(self,head):
     for next_block in head.next_blocks:
@@ -194,13 +201,24 @@ class Peer(threading.Thread):
     
   def handle_tx(self,transaction):
     self.session.add(transaction)
-    self.session.commit()
+    try:
+      self.session.commit()
+    except IntegrityError as e:
+      self.session.rollback()
+    except OperationalError as e:
+      self.session.rollback()
     
   def handle_block(self,block):
+    print(block.hash)
     if block.hash == bitcoin.storage.genesis_hash:
       block.height = 1.0
     self.session.add(block)
-    self.session.commit()
+    try:
+      self.session.commit()
+    except IntegrityError as e:
+      self.session.rollback()
+    except OperationalError as e:
+      self.session.rollback()
     
   def handle_headers(self,payload):
     pass
