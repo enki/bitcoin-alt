@@ -10,6 +10,10 @@ import bitcoin.net.message
 import bitcoin.net.payload
 import bitcoin.storage
 
+from sqlalchemy.sql.expression import not_
+from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker
+from sqlalchemy.orm.exc import NoResultFound
+
 class Peer(threading.Thread):
   def __init__(self,address,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
     super(Peer,self).__init__()
@@ -39,13 +43,14 @@ class Peer(threading.Thread):
     self.socket = socket.socket(socket.AF_INET6)
     self.socket.settimeout(5)
     
+    self.genesis_block = None
+    
     self.reader = bitcoin.net.message.reader(self.socket)
     
+    self.session = scoped_session(sessionmaker(bind=bitcoin.storage.engine))
+    self.session.execute("PRAGMA synchronous=OFF;")
+    
   def run(self):
-    try:
-      self.storage = bitcoin.storage.Storage()# this has to be here so that it's created in the same thread as it's used
-    except sqlite3.OperationalError as e:
-      pass
     try:
       self.socket.connect(self.address)
       self.socket.settimeout(30)
@@ -100,35 +105,48 @@ class Peer(threading.Thread):
       finally:
         if self.shutdown.is_set():
           return
+          
+  def difficulty(self,bits):
+    target = (bits & 0x00ffffff)*(2**(8*((bits >> 24) - 3))) 
+    max_target = 0x00000000ffff0000000000000000000000000000000000000000000000000000
+    return max_target/target
+
+  def get_heads(self):
+    return self.session.query(bitcoin.Block.hash).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash)))).all()
+      
+  def get_tails(self):
+    return self.session.query(bitcoin.Block.hash).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
+      
+  def connect_blocks(self):
+    heads = set(self.get_heads())
+    for head in heads:
+      self.connect_head(head)
+    self.session.commit()
+    heads = self.get_heads()
+    try:
+      self.send_getblocks(heads)
+    except AttributeError as e:
+      pass#this is raised when no version has yet been received
+  
+  def connect_head(self,head):
+    for next_block in head.next_blocks:
+      next_block.height = head.height + difficulty(next_block.bits)
+      self.connect_head(next_block)
         
   def handle_version(self,payload):
     self.version = payload['version']
     self.nonce = payload['nonce']
     self.services = payload['services']
     self.send_verack()
-    
-  def connect_blocks(self):
-    print("connect_blocks")
-    try:
-      self.storage.connect_blocks()
-      heads = self.storage.get_heads()
-      tails = self.storage.get_tails()
-      try:
-        self.send_getblocks(heads)
-        for tail in tails:
-          self.send_getblocks(heads,tail)
-      except AttributeError as e:
-        pass#this is raised when no version has yet been received
-    except sqlite3.OperationalError as e:
-      pass
       
   def handle_verack(self,payload):
-    if not self.storage.get_block(self.storage.genesis_hash):
-      print("requesting genesis block")
-      self.send_getblocks([self.storage.genesis_hash])
+    try:
+      genesis_block = self.session.query(bitcoin.Block).filter_by(hash=bitcoin.storage.genesis_hash).one()
+    except NoResultFound as e:
+      self.send_getblocks([bitcoin.storage.genesis_hash])
+    
     self.connect_blocks()
     self.send_getaddr()
-    pass
       
   def handle_addr(self,payload):
     for addr in payload:
@@ -139,23 +157,34 @@ class Peer(threading.Thread):
     invs = []
     for inv in payload:
       if inv['type'] == 1:
-        if not self.storage.get_transaction(inv['hash']):
+        try:
+          self.session.query(bitcoin.Transaction).filter_by(hash=inv['hash']).one()
+        except NoResultFound as e:
           invs.append(inv)
       if inv['type'] == 2:
-        if not self.storage.get_block(inv['hash']):
+        try:
+          self.session.query(bitcoin.Block).filter_by(hash=inv['hash']).one()
+        except NoResultFound as e:
           invs.append(inv)
-    self.send_getdata(invs)
+    if invs:
+      self.send_getdata(invs)
     
   def handle_getdata(self,payload):
     for inv in payload:
       if inv['type'] == 1:
-        d = self.storage.get_transaction(inv['hash'])
-        if d:
-          self.send_tx(d)
+        try:
+          transaction = self.session.query(bitcoin.Transaction).filter_by(hash=inv['hash']).one()
+        except NoResultFound as e:
+          pass
+        else:
+          self.send_tx(transaction)
       if inv['type'] == 2:
-        d = self.storage.get_block(inv['hash'])
-        if d:
-          self.send_block(d)
+        try:
+          block = self.session.query(bitcoin.Block).filter_by(hash=inv['hash']).one()
+        except NoResultFound as e:
+          pass
+        else:
+          self.send_block(block)
   
   def handle_getblocks(self,payload):
     pass
@@ -164,12 +193,14 @@ class Peer(threading.Thread):
     pass
     
   def handle_tx(self,transaction):
-    self.storage.put_transaction(transaction)
+    self.session.add(transaction)
+    self.session.commit()
     
   def handle_block(self,block):
-    if block.hash == self.storage.genesis_hash:
+    if block.hash == bitcoin.storage.genesis_hash:
       block.height = 1.0
-    self.storage.put_block(block)
+    self.session.add(block)
+    self.session.commit()
     
   def handle_headers(self,payload):
     pass
