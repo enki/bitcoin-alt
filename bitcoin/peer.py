@@ -117,7 +117,6 @@ class Peer(threading.Thread):
     return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
       
   def connect_blocks(self):
-    print("connect_blocks")
     try:
       heads = self.get_heads()
       for head in heads:
@@ -157,10 +156,7 @@ class Peer(threading.Thread):
       self.peers.add((addr.addr,addr.port))
   
   def handle_inv(self,payload):
-    print("handle_inv")
-    self.session.commit()
     invs = []
-    start = time.time()
     for inv in payload:
       if inv['type'] == 1:
         try:
@@ -177,9 +173,6 @@ class Peer(threading.Thread):
             self.requested_blocks.add(inv['hash'])
             invs.append(inv)
 
-    end = time.time()
-    print((end-start)/len(payload))
-    print(end-start)
     if invs:
       self.send_getdata(invs)
     
@@ -212,6 +205,7 @@ class Peer(threading.Thread):
     try:
       transaction = self.session.merge(transaction)
       self.session.add(transaction)
+      self.session.commit()
     except IntegrityError as e:
       self.session.rollback()
     except OperationalError as e:
@@ -229,6 +223,7 @@ class Peer(threading.Thread):
         block.height = 1.0
       block = self.session.merge(block)
       self.session.add(block)
+      self.session.commit()
     except IntegrityError as e:
       self.session.rollback()
     except OperationalError as e:

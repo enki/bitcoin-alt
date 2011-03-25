@@ -12,8 +12,8 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
 
 
-engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
-#engine = create_engine('sqlite:///bitcoin.sqlite3')
+#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
+engine = create_engine('sqlite:///bitcoin.sqlite3')
 metadata = MetaData()
 
 blocks_table = Table('blocks',metadata,
