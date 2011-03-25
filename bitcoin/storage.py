@@ -59,7 +59,7 @@ metadata.create_all(engine)
 
 mapper(bitcoin.Block,blocks_table,properties={
   'prev_block': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.hash,backref=backref('next_blocks')),
-  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.sequence],collection_class=ordering_list('position')),
+  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.position],collection_class=ordering_list('position')),
 })
 mapper(bitcoin.Transaction,transactions_table,properties={
   'inputs': relationship(bitcoin.TransactionInput,order_by=[transaction_inputs_table.c.position],collection_class=ordering_list('position')),
