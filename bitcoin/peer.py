@@ -48,6 +48,8 @@ class Peer(threading.Thread):
     
     self.session = scoped_session(sessionmaker(bind=bitcoin.storage.engine))
     self.session.execute("PRAGMA synchronous=OFF;")
+    self.session.execute("PRAGMA journal_mode=MEMORY;")
+    self.session.execute("PRAGMA temp_store=MEMORY;")
     
     self.requested_heads = set()
     self.requested_blocks = set()
@@ -226,6 +228,13 @@ class Peer(threading.Thread):
       self.session.commit()
     except IntegrityError as e:
       self.session.rollback()
+      try:
+        block = self.session.merge(block)
+        self.session.add(block)
+        self.session.commit()
+      except IntegrityError as e:
+        self.session.rollback()
+        import pdb;pdb.set_trace()
     except OperationalError as e:
       self.session.rollback()
       self.handle_block(block)
