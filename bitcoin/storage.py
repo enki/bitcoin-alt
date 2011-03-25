@@ -12,8 +12,9 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
 
 
-#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True)
-engine = create_engine('sqlite:///bitcoin.sqlite3')
+#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True,connect_args={'timeout':5000})
+engine = create_engine('sqlite:///bitcoin.sqlite3',connect_args={'timeout':5000})
+#engine = create_engine('postgresql+psycopg2://bitcoin@localhost/bitcoin')
 metadata = MetaData()
 
 blocks_table = Table('blocks',metadata,
@@ -33,7 +34,7 @@ transactions_table = Table('transactions',metadata,
   Column('version',SmallInteger),
   Column('lock_time',Integer,index=True),
   Column('position',Integer,index=True,nullable=True),
-  Column('block_hash',Integer,ForeignKey('blocks.hash'),nullable=True),
+  Column('block_hash',BINARY(32),ForeignKey('blocks.hash'),nullable=True),
 )
 
 transaction_inputs_table = Table('transaction_inputs',metadata,
@@ -43,7 +44,7 @@ transaction_inputs_table = Table('transaction_inputs',metadata,
   Column('script',BINARY),
   Column('sequence',Integer),
   Column('position',Integer),
-  Column('transaction_hash',Integer,ForeignKey('transactions.hash')),
+  Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash')),
 )
 
 transaction_outputs_table = Table('transaction_outputs',metadata,
@@ -51,7 +52,7 @@ transaction_outputs_table = Table('transaction_outputs',metadata,
   Column('value',BigInteger,index=True),
   Column('script',BINARY),
   Column('position',Integer),
-  Column('transaction_hash',Integer,ForeignKey('transactions.hash')),
+  Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash')),
 )
 
 metadata.create_all(engine)
@@ -67,5 +68,8 @@ mapper(bitcoin.Transaction,transactions_table,properties={
 
 mapper(bitcoin.TransactionOutput,transaction_outputs_table)
 mapper(bitcoin.TransactionInput,transaction_inputs_table)
+
+session = scoped_session(sessionmaker(bind=engine))
+flush_lock = threading.Lock()
 
 genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'

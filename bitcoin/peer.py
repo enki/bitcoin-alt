@@ -46,10 +46,7 @@ class Peer(threading.Thread):
     
     self.reader = bitcoin.net.message.reader(self.socket)
     
-    self.session = scoped_session(sessionmaker(bind=bitcoin.storage.engine))
-    self.session.execute("PRAGMA synchronous=OFF;")
-    self.session.execute("PRAGMA journal_mode=MEMORY;")
-    self.session.execute("PRAGMA temp_store=MEMORY;")
+    self.session = bitcoin.storage.session
     
     self.requested_heads = set()
     self.requested_blocks = set()
@@ -121,21 +118,20 @@ class Peer(threading.Thread):
   def connect_blocks(self):
     try:
       heads = self.get_heads()
-      for head in heads:
-        self.connect_head(head)
+      while heads:
+        head = heads.pop()
+        if head.next_blocks:
+          for next_block in head.next_blocks:
+            next_block.height = head.height + next_block.difficulty()
+            self.session.add(next_block)
+            heads.append(next_block)
+            
       heads = set((head.hash for head in self.get_heads())).difference(self.requested_heads)
       if heads:
         self.requested_heads.update(heads)
         self.send_getblocks(heads)
     except OperationalError as e:
       self.session.rollback()
-  
-  def connect_head(self,head):
-    if head.next_blocks:
-      for next_block in head.next_blocks:
-        next_block.height = head.height + next_block.difficulty()
-        self.session.add(next_block)
-        self.connect_head(next_block)
         
   def handle_version(self,payload):
     self.version = payload['version']
@@ -158,6 +154,7 @@ class Peer(threading.Thread):
       self.peers.add((addr.addr,addr.port))
   
   def handle_inv(self,payload):
+    self.session.commit()
     invs = []
     for inv in payload:
       if inv['type'] == 1:
@@ -205,14 +202,15 @@ class Peer(threading.Thread):
     
   def handle_tx(self,transaction):
     try:
-      transaction = self.session.merge(transaction)
-      self.session.add(transaction)
-      self.session.commit()
+      with bitcoin.storage.flush_lock:
+        transaction = self.session.merge(transaction)
+        self.session.add(transaction)
+        self.session.flush()
     except IntegrityError as e:
+      print("Rollback transaction ",block.transaction)
       self.session.rollback()
     except OperationalError as e:
       self.session.rollback()
-      self.handle_tx(transaction)
     finally:
       try:
         self.requested_transactions.remove(transaction.hash)
@@ -223,21 +221,15 @@ class Peer(threading.Thread):
     try:
       if block.hash == bitcoin.storage.genesis_hash:
         block.height = 1.0
-      block = self.session.merge(block)
-      self.session.add(block)
-      self.session.commit()
-    except IntegrityError as e:
-      self.session.rollback()
-      try:
+      with bitcoin.storage.flush_lock:
         block = self.session.merge(block)
         self.session.add(block)
-        self.session.commit()
-      except IntegrityError as e:
-        self.session.rollback()
-        import pdb;pdb.set_trace()
+        self.session.flush()
+    except IntegrityError as e:
+      print("Rollback block ",block.hash)
+      self.session.rollback()
     except OperationalError as e:
       self.session.rollback()
-      self.handle_block(block)
     finally:
       try:
         self.requested_blocks.remove(block.hash)
