@@ -2,18 +2,20 @@ import threading
 import random
 import time
 
-import bitcoin.peer
+import bitcoin.net.peer
+import bitcoin.storage
 
-class Peers(threading.Thread):
-  def __init__(self,shutdown,count=8):
-    super(Peers,self).__init__()
+class PeerManager(threading.Thread):
+  def __init__(self,storage,shutdown,count=8):
+    super(PeerManager,self).__init__()
     
-    self.peers = {}
     self.count = count
+    self.shutdown = shutdown
+    self.storage = storage
     
     self.plock = threading.RLock()
+    self.peers = {}
     
-    self.shutdown = shutdown
     self.daemon = True
     
   def get_thread(self,address):
@@ -34,7 +36,7 @@ class Peers(threading.Thread):
     with self.plock:
       self.add(address)
       if not self.peers[address]['thread'] or not self.peers[address]['thread'].is_alive():# TODO race condition if anybody else is starting peers, per peer lock?
-        self.peers[address]['thread'] = bitcoin.peer.Peer(address,self,self.shutdown)
+        self.peers[address]['thread'] = bitcoin.net.peer.Peer(address,self.storage,self,self.shutdown)
         self.peers[address]['thread'].start()
   
   def run(self):#TODO this is ridiculous inefficient
@@ -52,7 +54,7 @@ class Peers(threading.Thread):
             closed_peers.remove(peer)
       
       if self.shutdown.is_set():
-          return
+        return
       else:
         time.sleep(0.1)#tight loop
   

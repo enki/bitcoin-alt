@@ -4,7 +4,9 @@ import queue
 import time
 import sys
 
-import bitcoin.peers
+import bitcoin.peermanager
+import bitcoin.storage
+import bitcoin.connector
 
 static_peers = [("::ffff:174.120.185.74",8333)]#,("::ffff:193.25.1.157",8333)]
 #static_peers = [("::ffff:10.45.134.110",8333)]
@@ -12,8 +14,14 @@ static_peers = [("::ffff:174.120.185.74",8333)]#,("::ffff:193.25.1.157",8333)]
 shutdown = threading.Event()
 shutdown.clear()
 
-peers = bitcoin.peers.Peers(shutdown)
+storage = bitcoin.storage.Storage(shutdown)
+storage.start()
+
+peers = bitcoin.peermanager.PeerManager(storage,shutdown,1)
 peers.start()
+
+connector = bitcoin.connector.Connector(storage,peers,shutdown)
+connector.start()
 
 for peer in static_peers:
   peers.add(peer)

@@ -10,6 +10,7 @@ from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker,bac
 from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.expression import not_
 
 
 #engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True,connect_args={'timeout':5000})
@@ -59,7 +60,7 @@ metadata.create_all(engine)
 
 mapper(bitcoin.Block,blocks_table,properties={
   'prev_block': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.hash,backref=backref('next_blocks')),
-  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.sequence],collection_class=ordering_list('position')),
+  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.position],collection_class=ordering_list('position')),
 })
 mapper(bitcoin.Transaction,transactions_table,properties={
   'inputs': relationship(bitcoin.TransactionInput,order_by=[transaction_inputs_table.c.position],collection_class=ordering_list('position')),
@@ -69,7 +70,97 @@ mapper(bitcoin.Transaction,transactions_table,properties={
 mapper(bitcoin.TransactionOutput,transaction_outputs_table)
 mapper(bitcoin.TransactionInput,transaction_inputs_table)
 
-session = scoped_session(sessionmaker(bind=engine))
-flush_lock = threading.Lock()
-
 genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
+
+class Storage(threading.Thread):
+  def __init__(self,shutdown,flush_rate=30):
+    super(Storage,self).__init__()
+    
+    self.shutdown = shutdown
+    self.flush_rate = flush_rate
+    
+    self.session = scoped_session(sessionmaker(bind=engine))
+    
+    self.block_cache_lock = threading.RLock()
+    self.transaction_cache_lock = threading.RLock()
+    
+    self.transaction_cache = {}
+    self.block_cache = {}
+    
+    self.daemon = True
+    
+  def get_heads(self):
+    with self.transaction_cache_lock:
+      with self.block_cache_lock:
+        self.flush_caches()
+        return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
+      
+  def get_tails(self):
+    with self.transaction_cache_lock:
+      with self.block_cache_lock:
+        self.flush_caches()
+        return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
+    
+  def run(self):
+    while True:
+      self.flush_caches()
+      if self.shutdown.is_set():
+        return
+      else:
+        time.sleep(self.flush_rate)
+      
+  def flush_caches(self):
+    print("flush_caches")
+    self.flush_transaction_cache()
+    self.flush_block_cache()
+    print("flush_caches end")
+  
+  def flush_transaction_cache(self):
+    print("flush_transaction_cache")
+    with self.transaction_cache_lock:
+      print("self.transaction_cache_lock")
+      for hash,transaction in self.transaction_cache.items():
+        self.session.merge(transaction)
+      print("transaction commit")
+      self.session.commit()
+    print("flush_transaction_cache end")
+      
+  def flush_block_cache(self):
+    print("flush_block_cache")
+    with self.block_cache_lock:
+      print("self.block_cache_lock")
+      for hash,block in self.block_cache.items():
+        self.session.merge(block)
+      print("block commit")
+      self.session.commit()
+    print("flush_block_cache end")
+  
+  def put_transaction(self,transaction):
+    with self.transaction_cache_lock:
+      self.transaction_cache[transaction.hash] = transaction
+      
+  def put_block(self,block):
+    with self.block_cache_lock:
+      if block.hash == genesis_hash:
+        block.height = 1.0
+      self.block_cache[block.hash] = block
+      
+  def get_transaction(self,hash):
+    with self.transaction_cache_lock:
+      if hash in self.transaction_cache:
+        return self.transaction_cache[hash]
+      else:
+        try:
+          return self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==hash).one()
+        except NoResultFound as e:
+          return None
+        
+  def get_block(self,hash):
+    with self.block_cache_lock:
+      if hash in self.block_cache:
+        return self.block_cache[hash]
+      else:
+        try:
+          return self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==hash).one()
+        except NoResultFound as e:
+          return None
