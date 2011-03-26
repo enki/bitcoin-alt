@@ -45,13 +45,13 @@ class Peer(threading.Thread):
   def run(self):
     try:
       self.storage = bitcoin.storage.Storage()# this has to be here so that it's created in the same thread as it's used
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
       pass
     try:
       self.socket.connect(self.address)
       self.socket.settimeout(30)
       self.send_version()
-    except socket.timeout as e:
+    except socket.timeout:
       return
     except socket.error as e:
       if e.errno == 111:
@@ -63,10 +63,10 @@ class Peer(threading.Thread):
     while True:
       try:
         command,raw_payload = self.reader.read()
-      except socket.timeout as e:
+      except socket.timeout:
         self.send_ping()
         continue
-      except socket.error as e:
+      except socket.error:
         return
       finally:
         if self.shutdown.is_set():
@@ -93,9 +93,9 @@ class Peer(threading.Thread):
         'getaddr':self.handle_getaddr,
         'alert':self.handle_alert,
         }[command](payload)
-      except queue.Empty as e:
+      except queue.Empty:
         pass
-      except KeyboardInterrupt as e:
+      except KeyboardInterrupt:
         return
       finally:
         if self.shutdown.is_set():
@@ -119,9 +119,9 @@ class Peer(threading.Thread):
           self.requested_heads.update(heads)
         for tail in tails:
           self.send_getblocks(heads,tail)
-      except AttributeError as e:
+      except AttributeError:
         pass#this is raised when no version has yet been received
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
       pass
       
   def handle_verack(self,payload):
@@ -199,7 +199,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
         bitcoin.net.message.send(self.socket,b'version',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
     
   def send_verack(self):
@@ -207,7 +207,7 @@ class Peer(threading.Thread):
       try:
         bitcoin.net.message.send(self.socket,b'verack',b'')
         return True
-      except socket.error as e:
+      except socket.error:
         return False
     
   def send_addr(self,addrs):
@@ -216,7 +216,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.addr(addrs,self.version)
         bitcoin.net.message.send(self.socket,b'addr',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
       
   def send_inv(self,invs):
@@ -225,7 +225,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.inv(invs,self.version)
         bitcoin.net.message.send(self.socket,b'inv',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
     
   def send_getaddr(self):
@@ -233,7 +233,7 @@ class Peer(threading.Thread):
       try:
         bitcoin.net.message.send(self.socket,b'getaddr',b'')
         return True
-      except socket.error as e:
+      except socket.error:
         return False
     
   def send_getdata(self,invs):
@@ -242,7 +242,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.getdata(invs,self.version)
         bitcoin.net.message.send(self.socket,b'getdata',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
       
   def send_getblocks(self,starts,stop=b'\x00'*32):
@@ -251,7 +251,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.getblocks(self.version,starts,stop)
         bitcoin.net.message.send(self.socket,b'getblocks',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
       
   def send_getheaders(self,starts,stop):
@@ -260,7 +260,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.getheaders(self.version,starts,stop)
         bitcoin.net.message.send(self.socket,b'getheaders',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
       
   def send_block(self,version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
@@ -269,7 +269,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs)
         bitcoin.net.message.send(self.socket,b'block',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
       
   def send_tx(self,tx):
@@ -278,7 +278,7 @@ class Peer(threading.Thread):
         p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
         bitcoin.net.message.send(self.socket,b'tx',p)
         return True
-      except socket.error as e:
+      except socket.error:
         return False
     
   def send_ping(self):
@@ -286,5 +286,5 @@ class Peer(threading.Thread):
       try:
         bitcoin.net.message.send(self.socket,b'ping',b'')
         return True
-      except socket.error as e:
+      except socket.error:
         return False
