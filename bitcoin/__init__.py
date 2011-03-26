@@ -26,9 +26,6 @@ class Transaction(object):
     self.hash = tx_hash
     self.version = version
     self.lock_time = lock_time
-    
-    self.inputs = []
-    self.outputs = []
 
 class TransactionOutput(object): 
   def __init__(self,value,script):

@@ -80,6 +80,7 @@ class Storage(threading.Thread):
     self.flush_rate = flush_rate
     
     self.session = scoped_session(sessionmaker(bind=engine))
+    self.session_lock = threading.RLock()
     
     self.block_cache_lock = threading.RLock()
     self.transaction_cache_lock = threading.RLock()
@@ -93,13 +94,19 @@ class Storage(threading.Thread):
     print("get_heads")
     with self.transaction_cache_lock and self.block_cache_lock:
       self.flush_caches()
-      return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
+      with self.session_lock:
+        print("session_lock")
+        return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
     print("get_heads end")
       
   def get_tails(self):
+    print("get_tails")
     with self.transaction_cache_lock and self.block_cache_lock:
       self.flush_caches()
-      return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
+      with self.session_lock:
+        print("session_lock")
+        return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
+    print("get_tails end")
     
   def run(self):
     while True:
@@ -117,7 +124,7 @@ class Storage(threading.Thread):
   
   def flush_transaction_cache(self):
     print("flush_transaction_cache")
-    with self.transaction_cache_lock:
+    with self.transaction_cache_lock and self.session_lock:
       print("self.transaction_cache_lock")
       count = 1
       for hash,transaction in self.transaction_cache.items():
@@ -126,11 +133,12 @@ class Storage(threading.Thread):
         count += 1
       print("transaction commit")
       self.session.commit()
+      self.transaction_cache = {}
     print("flush_transaction_cache end")
       
   def flush_block_cache(self):
     print("flush_block_cache")
-    with self.block_cache_lock:
+    with self.block_cache_lock and self.session_lock:
       print("self.block_cache_lock")
       count = 1
       for hash,block in self.block_cache.items():
@@ -139,6 +147,7 @@ class Storage(threading.Thread):
         count += 1
       print("block commit")
       self.session.commit()
+      self.block_cache = {}
     print("flush_block_cache end")
   
   def put_transaction(self,transaction):
@@ -157,7 +166,8 @@ class Storage(threading.Thread):
         return self.transaction_cache[hash]
       else:
         try:
-          return self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==hash).one()
+          with self.session_lock:
+            return self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==hash).one()
         except NoResultFound as e:
           return None
         
@@ -167,6 +177,7 @@ class Storage(threading.Thread):
         return self.block_cache[hash]
       else:
         try:
-          return self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==hash).one()
+          with self.session_lock:
+            return self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==hash).one()
         except NoResultFound as e:
           return None
