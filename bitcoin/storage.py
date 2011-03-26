@@ -31,7 +31,6 @@ blocks_table = Table('blocks',metadata,
 
 transactions_table = Table('transactions',metadata,
   Column('hash',BINARY(32),index=True,primary_key=True),
-  Column('sequence',Integer,index=True,nullable=True),
   Column('version',SmallInteger),
   Column('lock_time',Integer,index=True),
   Column('position',Integer,index=True,nullable=True),
@@ -44,7 +43,7 @@ transaction_inputs_table = Table('transaction_inputs',metadata,
   Column('output_index',Integer),
   Column('script',BINARY),
   Column('sequence',Integer),
-  Column('position',Integer),
+  Column('position',Integer,index=True),
   Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash')),
 )
 
@@ -52,7 +51,7 @@ transaction_outputs_table = Table('transaction_outputs',metadata,
   Column('id',Integer,primary_key=True),
   Column('value',BigInteger,index=True),
   Column('script',BINARY),
-  Column('position',Integer),
+  Column('position',Integer,index=True),
   Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash')),
 )
 
@@ -60,8 +59,9 @@ metadata.create_all(engine)
 
 mapper(bitcoin.Block,blocks_table,properties={
   'prev_block': relationship(bitcoin.Block,primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,remote_side=blocks_table.c.hash,backref=backref('next_blocks')),
-  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.position],collection_class=ordering_list('position')),
+  'transactions': relationship(bitcoin.Transaction,order_by=[transactions_table.c.position],collection_class=ordering_list('position'),backref=backref('block')),
 })
+
 mapper(bitcoin.Transaction,transactions_table,properties={
   'inputs': relationship(bitcoin.TransactionInput,order_by=[transaction_inputs_table.c.position],collection_class=ordering_list('position')),
   'outputs': relationship(bitcoin.TransactionOutput,order_by=[transaction_outputs_table.c.position],collection_class=ordering_list('position')),
@@ -90,16 +90,16 @@ class Storage(threading.Thread):
     self.daemon = True
     
   def get_heads(self):
-    with self.transaction_cache_lock:
-      with self.block_cache_lock:
-        self.flush_caches()
-        return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
+    print("get_heads")
+    with self.transaction_cache_lock and self.block_cache_lock:
+      self.flush_caches()
+      return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
+    print("get_heads end")
       
   def get_tails(self):
-    with self.transaction_cache_lock:
-      with self.block_cache_lock:
-        self.flush_caches()
-        return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
+    with self.transaction_cache_lock and self.block_cache_lock:
+      self.flush_caches()
+      return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
     
   def run(self):
     while True:
@@ -119,8 +119,11 @@ class Storage(threading.Thread):
     print("flush_transaction_cache")
     with self.transaction_cache_lock:
       print("self.transaction_cache_lock")
+      count = 1
       for hash,transaction in self.transaction_cache.items():
+        print("session.merge ",count,"/",len(self.transaction_cache))
         self.session.merge(transaction)
+        count += 1
       print("transaction commit")
       self.session.commit()
     print("flush_transaction_cache end")
@@ -129,8 +132,11 @@ class Storage(threading.Thread):
     print("flush_block_cache")
     with self.block_cache_lock:
       print("self.block_cache_lock")
+      count = 1
       for hash,block in self.block_cache.items():
+        print("session.merge ",count,"/",len(self.block_cache))
         self.session.merge(block)
+        count += 1
       print("block commit")
       self.session.commit()
     print("flush_block_cache end")

@@ -17,7 +17,7 @@ shutdown.clear()
 storage = bitcoin.storage.Storage(shutdown)
 storage.start()
 
-peers = bitcoin.peermanager.PeerManager(storage,shutdown,1)
+peers = bitcoin.peermanager.PeerManager(storage,shutdown)
 peers.start()
 
 connector = bitcoin.connector.Connector(storage,peers,shutdown)

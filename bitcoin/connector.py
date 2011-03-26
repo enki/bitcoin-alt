@@ -36,11 +36,16 @@ class Connector(threading.Thread):
     print("calculating height...")
     while heads:
       head = heads.pop()
+      print("head ",head.hash)
       if head.next_blocks:
+        s=time.time()
         for next_block in head.next_blocks:
           next_block.height = head.height + next_block.difficulty()
           self.storage.put_block(next_block)
           heads.append(next_block)
+        e=time.time()
+        if e-s > 1:
+          print(e-s)
       else:
         print("found true head... ",head.hash)
         ends.append(head)
