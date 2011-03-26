@@ -1,0 +1,5 @@
+*.pyc
+*.pyo
+bitcoin.sqlite3
+bitcoin.sqlite3-journal
+test.py
