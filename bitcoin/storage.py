@@ -1,20 +1,22 @@
 import threading
 import time
-import sqlite3
 
 import bitcoin
 import bitcoin.net.payload
 
-blocks_table = """CREATE TABLE blocks(
-                    hash BINARY(32) PRIMARY KEY,
-                    prev_hash BINARY(32) REFERENCES blocks(hash),
-                    merkle_root BINARY(32),
-                    timestamp INTEGER,
-                    bits INTEGER,
-                    nonce BINARY(8),
-                    version INTEGER,
-                    height INTEGER,
-                    )"""
+from sqlalchemy import create_engine,Table,Column,MetaData,ForeignKey,DateTime,Integer,BigInteger,SmallInteger,Float
+from sqlalchemy.types import BINARY
+from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker,backref
+from sqlalchemy.ext.orderinglist import ordering_list
+from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.expression import not_
+
+
+#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True,connect_args={'timeout':5000})
+engine = create_engine('sqlite:///bitcoin.sqlite3',connect_args={'timeout':5000})
+#engine = create_engine('postgresql+psycopg2://bitcoin@localhost/bitcoin')
+metadata = MetaData()
 
 blocks_table = Table('blocks',metadata,
   Column('hash',BINARY(32),unique=True,primary_key=True),
