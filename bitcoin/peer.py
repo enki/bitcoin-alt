@@ -40,24 +40,18 @@ class Peer(threading.Thread):
     
     self.last_seen = 0
     
-    # TODO possibly this should be in run()
-    self.socket = socket.socket(socket.AF_INET6)
-    self.socket.settimeout(5)
-    
-    self.reader = bitcoin.net.message.reader(self.socket)
-    
     self.session = bitcoin.storage.session
-    
-    self.requested_heads = set()
-    self.requested_blocks = set()
-    self.requested_transactions = set()
     
   def run(self):
     try:
+      # TODO possibly this should be in run()
+      self.socket = socket.socket(socket.AF_INET6)
+      self.socket.settimeout(5)
       self.socket.connect(self.address)
       self.socket.settimeout(30)
+      self.reader = bitcoin.net.message.reader(self.socket)
       self.send_version()
-    except socket.timeout as e:
+    except socket.timeout:
       return
     except socket.error as e:
       if e.errno == 111:
@@ -67,13 +61,118 @@ class Peer(threading.Thread):
       else:
         raise e
         
+    replay = None
     while True:
       try:
-        command,raw_payload = self.reader.read()
-      except socket.timeout as e:
-        self.send_ping()
-        continue
-      except socket.error as e:
+        if replay:
+          command,payload = replay
+          replay = None
+        else:
+          command,payload = self.read_message()
+        
+        self.last_seen = time.time()
+        
+        if command != 'version' and command != 'verack' and not self.version:
+          raise Exception("received packet before version")
+        
+        if command == 'version':
+          self.version = payload['version']
+          self.nonce = payload['nonce']
+          self.services = payload['services']
+          self.send_verack()
+        elif command == 'verack':
+          try:
+            genesis_block = self.session.query(bitcoin.Block).filter_by(hash=bitcoin.storage.genesis_hash).one()
+          except NoResultFound as e:
+            self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
+            self.send_getblocks([bitcoin.storage.genesis_hash])
+          else:
+            self.connect_blocks()
+          finally:
+            self.send_getaddr()
+            pass
+
+        elif command == 'addr':
+          print("addr")
+          for addr in payload:
+            self.peers.add((addr.addr,addr.port))
+        elif command == 'inv':
+          print("inv",len(payload))
+          invs = []
+          for inv in payload:
+            if inv['type'] == 1:
+              try:
+                self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==inv['hash']).one()
+              except NoResultFound as e:
+                invs.append(inv)
+            if inv['type'] == 2:
+              try:
+                self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==inv['hash']).one()
+              except NoResultFound as e:
+                invs.append(inv)
+          if invs:
+            self.send_getdata(invs)
+          self.connect_blocks()
+        elif command == 'tx':
+          print("tx")
+          transactions = [payload]
+          command,payload = self.read_message()
+          while command == 'tx':
+            transactions.append(payload)
+            command,payload = self.read_message()
+          try:
+            for transaction in transactions:
+              self.session.merge(transaction)
+          except IntegrityError:
+            self.session.rollback()
+            for transaction in transactions:
+              self.session.merge(transaction)
+          self.session.commit()
+          replay = (command,payload)
+        elif command == 'block':
+          print("block")
+          start = time.time()
+          blocks = [payload]
+          command,payload = self.read_message()
+          while command == 'block':
+            blocks.append(payload)
+            command,payload = self.read_message()
+          try:
+            for block in blocks:
+              if block.hash == bitcoin.storage.genesis_hash:
+                block.height = 1.0
+              s=time.time()
+              self.session.merge(block)
+              print("session.merge(block)",time.time()-s)
+          except IntegrityError:# TODO this is kind of a race condition, overlapping block inserts could result in multiple IntegrityErrors
+            self.session.rollback()
+            for block in blocks:
+              if block.hash == bitcoin.storage.genesis_hash:
+                block.height = 1.0
+              self.session.merge(block)
+          s=time.time()
+          self.session.commit()
+          print("session.commit()",time.time()-s)
+          replay = (command,payload)
+          print("block end",time.time()-start)
+        elif command == 'getdata':
+          print("getdata")
+          for inv in payload:
+            if inv['type'] == 1:
+              try:
+                transaction = self.session.query(bitcoin.Transaction).filter_by(hash=inv['hash']).one()
+              except NoResultFound as e:
+                pass
+              else:
+                self.send_tx(transaction)
+            if inv['type'] == 2:
+              try:
+                block = self.session.query(bitcoin.Block).filter_by(hash=inv['hash']).one()
+              except NoResultFound as e:
+                pass
+              else:
+                self.send_block(block)
+      except socket.error:
         self.session.commit()
         return
       finally:
@@ -81,33 +180,14 @@ class Peer(threading.Thread):
           self.session.commit()
           return
           
-      self.last_seen = time.time()
-
+  def read_message(self):
+    try:
+      command,raw_payload = self.reader.read()
       payload = self.parser.parse(command,raw_payload)
-      
-      if command != 'version' and command != 'verack' and not self.version:
-        raise Exception("received packet before version")
-             
-      try: 
-        {'version':self.handle_version,
-        'verack':self.handle_verack,
-        'ping':self.handle_ping,
-        'addr':self.handle_addr,
-        'inv':self.handle_inv,
-        'getdata':self.handle_getdata,
-        'getblocks':self.handle_getblocks,
-        'getheaders':self.handle_getheaders,
-        'tx':self.handle_tx,
-        'block':self.handle_block,
-        'getaddr':self.handle_getaddr,
-        'alert':self.handle_alert,
-        }[command](payload)
-      except queue.Empty as e:
-        pass
-      finally:
-        if self.shutdown.is_set():
-          self.session.commit()
-          return
+    except socket.timeout:
+      self.send_ping()
+      return self.read_message()
+    return (command,payload)
 
   def get_heads(self):
     return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
@@ -116,6 +196,8 @@ class Peer(threading.Thread):
     return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
       
   def connect_blocks(self):
+    print("connect_blocks")
+    start = time.time()
     try:
       heads = self.get_heads()
       while heads:
@@ -123,141 +205,22 @@ class Peer(threading.Thread):
         if head.next_blocks:
           for next_block in head.next_blocks:
             next_block.height = head.height + next_block.difficulty()
-            self.session.add(next_block)
+            self.session.merge(next_block)
             heads.append(next_block)
-            
-      heads = set((head.hash for head in self.get_heads())).difference(self.requested_heads)
+      
+      self.session.commit()
+      heads = self.get_heads()
       if heads:
-        self.requested_heads.update(heads)
-        self.send_getblocks(heads)
+        self.send_getblocks([block.hash for block in heads])
     except OperationalError as e:
+      print("OperationalError")
       self.session.rollback()
-        
-  def handle_version(self,payload):
-    self.version = payload['version']
-    self.nonce = payload['nonce']
-    self.services = payload['services']
-    self.send_verack()
       
-  def handle_verack(self,payload):
-    try:
-      genesis_block = self.session.query(bitcoin.Block).filter_by(hash=bitcoin.storage.genesis_hash).one()
-    except NoResultFound as e:
-      self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
-      self.send_getblocks([bitcoin.storage.genesis_hash])
-    
-    self.send_getaddr()
-    self.connect_blocks()
-      
-  def handle_addr(self,payload):
-    for addr in payload:
-      self.peers.add((addr.addr,addr.port))
+    end = time.time()
+    print("connect_blocks end",end-start)
   
-  def handle_inv(self,payload):
-    self.session.commit()
-    invs = []
-    for inv in payload:
-      if inv['type'] == 1:
-        try:
-          self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==inv['hash']).one()
-        except NoResultFound as e:
-          if inv['hash'] not in self.requested_transactions:
-            self.requested_transactions.add(inv['hash'])
-            invs.append(inv)
-      if inv['type'] == 2:
-        try:
-          self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==inv['hash']).one()
-        except NoResultFound as e:
-          if inv['hash'] not in self.requested_blocks:
-            self.requested_blocks.add(inv['hash'])
-            invs.append(inv)
-
-    if invs:
-      self.send_getdata(invs)
-    
-    self.connect_blocks()
-    
-  def handle_getdata(self,payload):
-    for inv in payload:
-      if inv['type'] == 1:
-        try:
-          transaction = self.session.query(bitcoin.Transaction).filter_by(hash=inv['hash']).one()
-        except NoResultFound as e:
-          pass
-        else:
-          self.send_tx(transaction)
-      if inv['type'] == 2:
-        try:
-          block = self.session.query(bitcoin.Block).filter_by(hash=inv['hash']).one()
-        except NoResultFound as e:
-          pass
-        else:
-          self.send_block(block)
-  
-  def handle_getblocks(self,payload):
-    pass
-    
-  def handle_getheaders(self,payload):
-    pass
-    
-  def handle_tx(self,transaction):
-    try:
-      with bitcoin.storage.flush_lock:
-        transaction = self.session.merge(transaction)
-        self.session.add(transaction)
-        self.session.flush()
-    except IntegrityError as e:
-      print("Rollback transaction ",block.transaction)
-      self.session.rollback()
-    except OperationalError as e:
-      self.session.rollback()
-    finally:
-      try:
-        self.requested_transactions.remove(transaction.hash)
-      except KeyError as e:
-        pass
-    
-  def handle_block(self,block):
-    try:
-      if block.hash == bitcoin.storage.genesis_hash:
-        block.height = 1.0
-      with bitcoin.storage.flush_lock:
-        block = self.session.merge(block)
-        self.session.add(block)
-        self.session.flush()
-    except IntegrityError as e:
-      print("Rollback block ",block.hash)
-      self.session.rollback()
-    except OperationalError as e:
-      self.session.rollback()
-    finally:
-      try:
-        self.requested_blocks.remove(block.hash)
-      except KeyError as e:
-        pass
-    
-  def handle_headers(self,payload):
-    pass
-    
-  def handle_getaddr(self,payload):
-    pass
-    
-  def handle_checkorder(self,payload):
-    pass
-    
-  def handle_submitorder(self,payload):
-    pass
-    
-  def handle_reply(self,payload):
-    pass
-    
-  def handle_alert(self,payload):
-    pass
-
-  def handle_ping(self,payload):
-    pass
-    
   def send_version(self):
+    print("send_version")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.version(self.my_version,self.my_services,int(time.time()),self.addr_me,self.addr_you,self.my_nonce,'',110879)
@@ -267,6 +230,7 @@ class Peer(threading.Thread):
         return False
     
   def send_verack(self):
+    print("send_verack")
     with self.socket_lock:
       try:
         bitcoin.net.message.send(self.socket,b'verack',b'')
@@ -275,6 +239,7 @@ class Peer(threading.Thread):
         return False
     
   def send_addr(self,addrs):
+    print("send_addr")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.addr(addrs,self.version)
@@ -284,6 +249,7 @@ class Peer(threading.Thread):
         return False
       
   def send_inv(self,invs):
+    print("send_inv")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.inv(invs,self.version)
@@ -293,6 +259,7 @@ class Peer(threading.Thread):
         return False
     
   def send_getaddr(self):
+    print("send_getaddr")
     with self.socket_lock:
       try:
         bitcoin.net.message.send(self.socket,b'getaddr',b'')
@@ -301,6 +268,7 @@ class Peer(threading.Thread):
         return False
     
   def send_getdata(self,invs):
+    print("send_getdata")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.getdata(invs,self.version)
@@ -320,6 +288,7 @@ class Peer(threading.Thread):
         return False
       
   def send_getheaders(self,starts,stop):
+    print("send_getheaders")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.getheaders(self.version,starts,stop)
@@ -329,6 +298,7 @@ class Peer(threading.Thread):
         return False
       
   def send_block(self,version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
+    print("send_block")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs)
@@ -338,6 +308,7 @@ class Peer(threading.Thread):
         return False
       
   def send_tx(self,tx):
+    print("send_tx")
     with self.socket_lock:
       try:
         p = bitcoin.net.payload.tx(tx['version'],tx['tx_ins'],tx['tx_outs'],tx['lock_time'])
@@ -347,6 +318,7 @@ class Peer(threading.Thread):
         return False
     
   def send_ping(self):
+    print("send_ping")
     with self.socket_lock:
       try:
         bitcoin.net.message.send(self.socket,b'ping',b'')
