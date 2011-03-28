@@ -16,10 +16,11 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError,OperationalError
 
 class Peer(threading.Thread):
-  def __init__(self,address,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
+  def __init__(self,address,storage,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
     super(Peer,self).__init__()
     
     self.address = address
+    self.storage = storage
 
     self.parser = bitcoin.net.payload.parser()
     
@@ -81,17 +82,15 @@ class Peer(threading.Thread):
           self.services = payload['services']
           self.send_verack()
         elif command == 'verack':
-          try:
-            # TODO do we already have the genesis block?
-            genesis_block = self.session.query(bitcoin.Block).filter_by(hash=bitcoin.storage.genesis_hash).one()
-          except NoResultFound as e:
+          genesis_block = self.storage.get_block(bitcoin.storage.genesis_hash)
+          if genesis_block:
+            print("requesting genesis block")
             self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
             self.send_getblocks([bitcoin.storage.genesis_hash])
           else:
             self.connect_blocks()
-          finally:
-            self.send_getaddr()
-            pass
+          
+          self.send_getaddr()
 
         elif command == 'addr':
           print("addr")
