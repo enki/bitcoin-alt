@@ -18,21 +18,21 @@ engine = create_engine('sqlite:///bitcoin.sqlite3',connect_args={'timeout':5000}
 metadata = MetaData()
 
 blocks_table = Table('blocks',metadata,
-  Column('hash',BINARY(32),unique=True,primary_key=True,index=True),
-  Column('prev_hash',BINARY(32),ForeignKey('blocks.hash'),nullable=True),
+  Column('hash',BINARY(32),primary_key=True),
+  Column('prev_hash',BINARY(32)),
   Column('merkle_root',BINARY(32)),
-  Column('timestamp',Integer,index=True),
-  Column('bits',Integer,index=True),
+  Column('timestamp',Integer),
+  Column('bits',Integer),
   Column('nonce',BINARY(8)),
   Column('version',SmallInteger),
   Column('height',Float,nullable=True,index=True),
 )
 
 transactions_table = Table('transactions',metadata,
-  Column('hash',BINARY(32),index=True,primary_key=True),
+  Column('hash',BINARY(32),primary_key=True),
   Column('version',SmallInteger),
-  Column('lock_time',Integer,index=True),
-  Column('position',Integer,index=True,nullable=True),
+  Column('lock_time',Integer),
+  Column('position',Integer,nullable=True),
   Column('block_hash',BINARY(32),ForeignKey('blocks.hash'),nullable=True),
 )
 
@@ -48,7 +48,7 @@ transaction_inputs_table = Table('transaction_inputs',metadata,
 
 transaction_outputs_table = Table('transaction_outputs',metadata,
   Column('id',Integer,primary_key=True),
-  Column('value',BigInteger,index=True),
+  Column('value',BigInteger),
   Column('script',BINARY),
   Column('position',Integer),
   Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash')),
@@ -58,6 +58,7 @@ metadata.create_all(engine)
 
 mapper(bitcoin.Block,blocks_table,properties={
   'prev_block': relationship(bitcoin.Block,
+                foreign_keys=blocks_table.c.prev_hash,
                 primaryjoin=blocks_table.c.hash==blocks_table.c.prev_hash,
                 remote_side=blocks_table.c.hash,
                 backref=backref('next_blocks')),

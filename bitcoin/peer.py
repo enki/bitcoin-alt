@@ -89,7 +89,7 @@ class Peer(threading.Thread):
           else:
             self.connect_blocks()
           finally:
-            self.send_getaddr()
+            #self.send_getaddr()
             pass
 
         elif command == 'addr':
@@ -98,20 +98,28 @@ class Peer(threading.Thread):
             self.peers.add((addr.addr,addr.port))
         elif command == 'inv':
           print("inv",len(payload))
+          start = time.time()
+          block_hashs = [inv['hash'] for inv in payload if inv['type'] == 2]
+          transaction_hashs = [inv['hash'] for inv in payload if inv['type'] == 1]
           invs = []
-          for inv in payload:
-            if inv['type'] == 1:
-              try:
-                self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash==inv['hash']).one()
-              except NoResultFound as e:
-                invs.append(inv)
-            if inv['type'] == 2:
-              try:
-                self.session.query(bitcoin.Block).filter(bitcoin.Block.hash==inv['hash']).one()
-              except NoResultFound as e:
-                invs.append(inv)
+          
+          if block_hashs:
+            blocks = self.session.query(bitcoin.Block).filter(bitcoin.Block.hash.in_(block_hashs)).all()
+            for block in blocks:
+              block_hashs.remove(block.hash)
+            if block_hashs:
+              invs.extend([{'type':2,'hash':block_hash} for block_hash in block_hashs])
+          
+          if transaction_hashs:
+            transactions = self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash.in_(transaction_hashs)).all()
+            for transaction in transactions:
+              transaction_hashs.remove(transaction.hash)
+            if transaction_hashs:
+              invs.extend([{'type':1,'hash':transaction_hash} for transaction_hash in transaction_hashs])
+          
           if invs:
             self.send_getdata(invs)
+          print("inv end",time.time()-start)
           self.connect_blocks()
         elif command == 'tx':
           print("tx")
@@ -138,12 +146,16 @@ class Peer(threading.Thread):
             blocks.append(payload)
             command,payload = self.read_message()
           try:
+            s1 = time.time()
             for block in blocks:
               if block.hash == bitcoin.storage.genesis_hash:
                 block.height = 1.0
+                
               s=time.time()
+              print("session.merge(block)")
               self.session.merge(block)
-              print("session.merge(block)",time.time()-s)
+              print("session.merge(block) end",time.time()-s)
+            print("merged ",time.time()-s1)
           except IntegrityError:# TODO this is kind of a race condition, overlapping block inserts could result in multiple IntegrityErrors
             self.session.rollback()
             for block in blocks:
