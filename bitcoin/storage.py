@@ -55,11 +55,19 @@ class Storage:
     super(Storage,self).__init__()
     
     self.db = sqlite3.connect('bitcoin.sqlite3')
+    self.db.row_factory = sqlite3.Row
     self.db.execute('PRAGMA journal_mode=WAL;')
     
   def get_block(self,hash):
-    c = self.db.execute('SELECT * FROM blocks WHERE hash=?',(hash,))
+    blocks = self.get_blocks((hash,))
+    if len(blocks) > 1:
+      raise Exception("MultipleResultsFound")
+    elif blocks == 1:
+      return blocks[0]
+    else:
+      return None
   
   def get_blocks(self,hashes):
-    c = self.db.execute('SELECT * FROM blocks WHERE hash=?
+    c = self.db.executemany('SELECT * FROM blocks WHERE hash=?',((hash,) for hash in hashes))
+    return c.fetchall()
     
