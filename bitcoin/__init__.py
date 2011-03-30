@@ -5,14 +5,15 @@ class Address(object):
     self.services = services
 
 class Block(object):
-  def __init__(self,block_hash,prev_hash,merkle_root,timestamp,bits,nonce,version):
-    self.hash = block_hash
+  def __init__(self,hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height=None):
+    self.hash = hash
     self.prev_hash = prev_hash
     self.merkle_root = merkle_root
     self.timestamp = timestamp
     self.bits = bits
     self.nonce = nonce
     self.version = version
+    self.height = height
     
   def target(self):
     return (self.bits & 0x00ffffff)*(2**(8*((self.bits >> 24) - 3)))

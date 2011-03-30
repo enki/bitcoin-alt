@@ -17,23 +17,21 @@ create_statements = ["""CREATE TABLE IF NOT EXISTS blocks (
 	PRIMARY KEY (hash)
 );""",
 """CREATE TABLE IF NOT EXISTS transaction_inputs (
-	id INTEGER NOT NULL, 
 	output_hash BINARY(32), 
 	output_index INTEGER, 
 	script BINARY, 
 	sequence INTEGER, 
 	position INTEGER, 
 	transaction_hash BINARY(32), 
-	PRIMARY KEY (id), 
+	PRIMARY KEY (output_hash,output_index), 
 	FOREIGN KEY(transaction_hash) REFERENCES transactions (hash)
 );""",
 """CREATE TABLE IF NOT EXISTS transaction_outputs (
-	id INTEGER NOT NULL, 
 	value BIGINT, 
 	script BINARY, 
 	position INTEGER, 
 	transaction_hash BINARY(32), 
-	PRIMARY KEY (id), 
+	PRIMARY KEY (transaction_hash,position), 
 	FOREIGN KEY(transaction_hash) REFERENCES transactions (hash)
 );""",
 """CREATE TABLE IF NOT EXISTS transactions (
@@ -44,9 +42,7 @@ create_statements = ["""CREATE TABLE IF NOT EXISTS blocks (
 	block_hash BINARY(32), 
 	PRIMARY KEY (hash), 
 	FOREIGN KEY(block_hash) REFERENCES blocks (hash)
-);""",
-"""CREATE INDEX IF NOT EXISTS ix_blocks_height ON blocks (height);""",
-"""CREATE INDEX IF NOT EXISTS ix_transaction_inputs_output_hash ON transaction_inputs (output_hash);"""]
+);"""]
 
 genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
 
@@ -60,14 +56,32 @@ class Storage:
     
   def get_block(self,hash):
     blocks = self.get_blocks((hash,))
-    if len(blocks) > 1:
-      raise Exception("MultipleResultsFound")
-    elif blocks == 1:
+    if blocks == 1:
       return blocks[0]
     else:
       return None
   
   def get_blocks(self,hashes):
-    c = self.db.executemany('SELECT * FROM blocks WHERE hash=?',((hash,) for hash in hashes))
-    return c.fetchall()
+    blocks = []
+    for hash in hashes:
+      c = self.db.execute('SELECT * FROM blocks WHERE hash=?',(hash,))
+      row = c.fetchone()
+      block = bitcoin.Block(**row)
+      blocks.append(block)
+    return blocks
+    
+  def heads(self):
+    c = self.db.execute('SELECT * FROM blocks WHERE height IS NOT NULL AND hash NOT IN (SELECT prev_hash FROM blocks WHERE height IS NOT NULL)')
+    return [bitcoin.Block(**block) for block in c.fetchall()]
+    
+  def next_blocks(self,block):
+    c = self.db.execute('SELECT * FROM blocks WHERE prev_hash=?',(block.hash,))
+    return [bitcoin.Block(**block) for block in c.fetchall()]
+    
+  def put_blocks(self,blocks):
+    self.db.executemany('INSERT OR IGNORE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version) VALUES(:hash,:prev_hash,:merkle_root,:timestamp,:bits,:nonce,:version)',blocks)
+    self.db.commit()
+    
+  def put_block(self,block):
+    self.put_blocks([block])
     
