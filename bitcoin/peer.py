@@ -44,7 +44,6 @@ class Peer(threading.Thread):
     
   def run(self):
     try:
-      # TODO possibly this should be in run()
       self.socket = socket.socket(socket.AF_INET6)
       self.socket.settimeout(5)
       self.socket.connect(self.address)
