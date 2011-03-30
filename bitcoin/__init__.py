@@ -15,6 +15,8 @@ class Block(object):
     self.version = version
     self.height = height
     
+    self.transactions = []
+    
   def target(self):
     return (self.bits & 0x00ffffff)*(2**(8*((self.bits >> 24) - 3)))
     
@@ -23,10 +25,13 @@ class Block(object):
     return max_target/self.target()
     
 class Transaction(object): 
-  def __init__(self,tx_hash,version,lock_time):
-    self.hash = tx_hash
+  def __init__(self,hash,version,lock_time):
+    self.hash = hash
     self.version = version
     self.lock_time = lock_time
+    
+    self.block_hash = None
+    self.position = None
     
     self.inputs = []
     self.outputs = []
@@ -38,7 +43,7 @@ class TransactionOutput(object):
   
 class TransactionInput(object):  
   def __init__(self,out_hash,out_index,script,sequence):
-    self.output_hash = out_hash
-    self.output_index = out_index
+    self.hash = out_hash
+    self.index = out_index
     self.script = script
     self.sequence = sequence

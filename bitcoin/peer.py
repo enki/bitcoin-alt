@@ -16,11 +16,10 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError,OperationalError
 
 class Peer(threading.Thread):
-  def __init__(self,address,storage,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
+  def __init__(self,address,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
     super(Peer,self).__init__()
     
     self.address = address
-    self.storage = storage
 
     self.parser = bitcoin.net.payload.parser()
     
@@ -41,8 +40,6 @@ class Peer(threading.Thread):
     
     self.last_seen = 0
     
-    self.session = bitcoin.storage.session
-    
   def run(self):
     try:
       # TODO possibly this should be in run()
@@ -52,6 +49,8 @@ class Peer(threading.Thread):
       self.socket.settimeout(30)
       self.reader = bitcoin.net.message.reader(self.socket)
       self.send_version()
+      
+      self.storage = bitcoin.storage.Storage()
     except socket.timeout:
       return
     except socket.error as e:
@@ -83,15 +82,15 @@ class Peer(threading.Thread):
           self.send_verack()
         elif command == 'verack':
           genesis_block = self.storage.get_block(bitcoin.storage.genesis_hash)
-          if genesis_block:
+          if not genesis_block:
             print("requesting genesis block")
             self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
             self.send_getblocks([bitcoin.storage.genesis_hash])
-          else:
-            self.connect_blocks()
-          
           self.send_getaddr()
-
+          
+          heads = self.storage.heads()
+          if heads:
+            self.send_getblocks([head.hash for head in heads])
         elif command == 'addr':
           print("addr")
           for addr in payload:
@@ -112,7 +111,6 @@ class Peer(threading.Thread):
               invs.extend([{'type':2,'hash':block_hash} for block_hash in block_hashs])
           
           if transaction_hashs:
-            # TODO do we already have these transactions?
             transactions = self.storage.get_transactions(transaction_hashs)
             for transaction in transactions:
               transaction_hashs.remove(transaction.hash)
@@ -121,8 +119,11 @@ class Peer(threading.Thread):
           
           if invs:
             self.send_getdata(invs)
+            
+          heads = self.storage.heads()
+          if heads:
+            self.send_getblocks([head.hash for head in heads])
           print("inv end",time.time()-start)
-          self.connect_blocks()
         elif command == 'tx':
           print("tx")
           transactions = [payload]
@@ -130,16 +131,8 @@ class Peer(threading.Thread):
           while command == 'tx':
             transactions.append(payload)
             command,payload = self.read_message()
-          try:
-            # TODO merge the transactions with whatever information we already have about the transaction everything is static except the block_hash which is write once
-            for transaction in transactions:
-              self.session.merge(transaction)
-          except IntegrityError:
-            self.session.rollback()
-            for transaction in transactions:
-              self.session.merge(transaction)
-          self.session.commit()
           replay = (command,payload)
+          self.storage.put_transactions(transactions)
         elif command == 'block':
           print("block")
           start = time.time()
@@ -148,58 +141,33 @@ class Peer(threading.Thread):
           while command == 'block':
             blocks.append(payload)
             command,payload = self.read_message()
-          try:
-            s1 = time.time()
-            for block in blocks:
-              if block.hash == bitcoin.storage.genesis_hash:
-                block.height = 1.0
-                
-              # TODO merge the blocks with whatever information we already have about the block, everything is static except the height of the block which is write once
-              s=time.time()
-              print("session.merge(block)")
-              if type(block.hash) is not bytes:
-                print("type(block.hash)",block.hash)
-              if type(block.prev_hash) is not bytes:
-                print("type(block.prev_hash)",block.prev_hash)
-              self.session.merge(block)
-              print("session.merge(block) end",time.time()-s)
-            print("merged ",time.time()-s1)
-          except IntegrityError:# TODO this is kind of a race condition, overlapping block inserts could result in multiple IntegrityErrors
-            self.session.rollback()
-            for block in blocks:
-              if block.hash == bitcoin.storage.genesis_hash:
-                block.height = 1.0
-              self.session.merge(block)
-          s=time.time()
-          self.session.commit()
-          print("session.commit()",time.time()-s)
           replay = (command,payload)
+          for block in blocks:
+            if block.hash == bitcoin.storage.genesis_hash:
+              block.height = 1.0
+          s=time.time()
+          self.storage.put_blocks(blocks)
+          print(time.time()-s)
           print("block end",time.time()-start)
         elif command == 'getdata':
           print("getdata")
-          block_hashs = [inv['hash'] for inv in payload if inv['type'] == 2]
-          transaction_hashs = [inv['hash'] for inv in payload if inv['type'] == 1]
+          block_hashes = [inv['hash'] for inv in payload if inv['type'] == 2]
+          transaction_hashes = [inv['hash'] for inv in payload if inv['type'] == 1]
           invs = []
-          if block_hashs:
-            # TODO do we have these blocks?
-            blocks = self.session.query(bitcoin.Block).filter(bitcoin.Block.hash.in_(block_hashs)).all()
-            if blocks:
-              for block in blocks:
-                self.send_block(block)
+          if block_hashes:
+            blocks = self.storage.get_blocks(block_hashes)
+            for block in blocks:
+              self.send_block(block)
           
-          if transaction_hashs:
-            # TODO do we already have these transactions?
-            transactions = self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash.in_(transaction_hashs)).all()
-            if transactions:
-              for transaction in transactions:
-                self.send_transaction(transaction)
+          if transaction_hashes:
+            transactions = self.storage.get_transactions(transaction_hashes)
+            for transaction in transactions:
+              self.send_transaction(transaction)
                 
       except socket.error:
-        self.session.commit()
         return
       finally:
         if self.shutdown.is_set():
-          self.session.commit()
           return
           
   def read_message(self):
@@ -210,39 +178,6 @@ class Peer(threading.Thread):
       self.send_ping()
       return self.read_message()
     return (command,payload)
-
-  def get_heads(self):
-    # TODO find the heads of the verified block chain (blocks with a height)
-    return self.session.query(bitcoin.Block).filter(bitcoin.Block.height!=None).filter(not_(bitcoin.Block.hash.in_(self.session.query(bitcoin.Block.prev_hash).filter(bitcoin.Block.height!=None)))).all()
-      
-  def get_tails(self):
-    # TODO find the tails of the unverified blocks (blocks without a height)
-    return self.session.query(bitcoin.Block).filter(bitcoin.Block.height==None).filter(not_(bitcoin.Block.prev_hash.in_(self.session.query(bitcoin.Block.hash)))).all()
-      
-  def connect_blocks(self):
-    print("connect_blocks")
-    # TODO walk the block chain setting the height as we go
-    start = time.time()
-    try:
-      heads = self.get_heads()
-      while heads:
-        head = heads.pop()
-        if head.next_blocks:
-          for next_block in head.next_blocks:
-            next_block.height = head.height + next_block.difficulty()
-            self.session.merge(next_block)
-            heads.append(next_block)
-      
-      self.session.commit()
-      heads = self.get_heads()
-      if heads:
-        self.send_getblocks([block.hash for block in heads])
-    except OperationalError as e:
-      print("OperationalError")
-      self.session.rollback()
-      
-    end = time.time()
-    print("connect_blocks end",end-start)
   
   def send_version(self):
     print("send_version")
