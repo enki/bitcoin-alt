@@ -104,9 +104,8 @@ class Peer(threading.Thread):
           invs = []
           
           if block_hashs:
-            # TODO do we already have these blocks?
             # TODO this should include the transactions associated with the blocks
-            blocks = self.session.query(bitcoin.Block).filter(bitcoin.Block.hash.in_(block_hashs)).all()
+            blocks = self.storage.get_blocks(block_hashs)
             for block in blocks:
               block_hashs.remove(block.hash)
             if block_hashs:
@@ -114,7 +113,7 @@ class Peer(threading.Thread):
           
           if transaction_hashs:
             # TODO do we already have these transactions?
-            transactions = self.session.query(bitcoin.Transaction).filter(bitcoin.Transaction.hash.in_(transaction_hashs)).all()
+            transactions = self.storage.get_transactions(transaction_hashs)
             for transaction in transactions:
               transaction_hashs.remove(transaction.hash)
             if transaction_hashs:

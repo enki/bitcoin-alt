@@ -85,3 +85,8 @@ class Storage:
   def put_block(self,block):
     self.put_blocks([block])
     
+  def get_transactions(self,hashes):
+    transactions = []
+    for hash in hashes:
+      c = self.db.execute('SELECT * FROM transactions WHERE ')
+    
