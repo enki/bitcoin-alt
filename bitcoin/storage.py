@@ -75,6 +75,11 @@ class Storage:
       row = c.fetchone()
       if row:
         block = bitcoin.Block(**row)
+        c = self.db.execute('SELECT hash FROM transactions WHERE block_hash=? ORDER BY position',(block.hash,))
+        rows = c.fetchall()
+        if rows:
+          transaction_hashes = [row['hash'] for row in rows]
+          block.transactions = self.get_transactions(transaction_hashes)
         blocks.append(block)
     return blocks
     
@@ -94,6 +99,7 @@ class Storage:
     for block in blocks:
       self.db.execute('INSERT OR REPLACE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height) VALUES(?,?,?,?,?,?,?,?)',(block.hash,block.prev_hash,block.merkle_root,block.timestamp,block.bits,block.nonce,block.version,block.height))
       for transaction in block.transactions:
+        transaction.block_hash = block.hash
         transaction.position = block.transactions.index(transaction)
       self.put_transactions(block.transactions,False)
     self.connect_blocks(False)

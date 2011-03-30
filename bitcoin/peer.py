@@ -86,7 +86,7 @@ class Peer(threading.Thread):
             print("requesting genesis block")
             self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
             self.send_getblocks([bitcoin.storage.genesis_hash])
-          #self.send_getaddr()
+          self.send_getaddr()
           
           # attempt to connect disparate blocks
           tails = self.storage.tails()
