@@ -14,7 +14,8 @@ create_statements = ["""CREATE TABLE IF NOT EXISTS blocks (
 	nonce BINARY(8) NOT NULL,
 	version SMALLINT NOT NULL,
 	height FLOAT,
-	PRIMARY KEY (hash)
+	PRIMARY KEY (hash),
+	UNIQUE (prev_hash)
 );""",
 """CREATE TABLE IF NOT EXISTS transaction_inputs (
 	output_hash BINARY(32) NOT NULL,
@@ -86,9 +87,9 @@ class Storage:
   def put_blocks(self,blocks):
     for block in blocks:
       self.db.execute('INSERT OR IGNORE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height) VALUES(?,?,?,?,?,?,?,?)',(block.hash,block.prev_hash,block.merkle_root,block.timestamp,block.bits,block.nonce,block.version,block.height))
+      #TODO set position
       self.put_transactions(block.transactions,False)
-      
-    self.connect_blocks()
+    self.connect_blocks(False)
     self.db.commit()
     
   def put_block(self,block):
@@ -97,9 +98,10 @@ class Storage:
   def set_height(self,hash,height):
     self.set_heights([(height,hash)])
     
-  def set_heights(self,heights):# heights = [(height,hash)]
+  def set_heights(self,heights,commit=True):# heights = [(height,hash)]
     self.db.executemany('UPDATE blocks SET height=? WHERE hash=?',heights)
-    self.db.commit()
+    if commit:
+      self.db.commit()
     
   def get_transaction(self,hash):
     transactions = self.get_transactions([hash])
@@ -144,7 +146,7 @@ class Storage:
     if commit:
       self.db.commit()
     
-  def connect_blocks(self):
+  def connect_blocks(self,commit=True):
     heads = self.heads()
     heights = []
     while heads:
@@ -155,5 +157,4 @@ class Storage:
           next_block.height = head.height + next_block.difficulty()
           heights.append((next_block.height,next_block.hash))
           heads.append(next_block)
-    
-    self.set_heights(heights)
+    self.set_heights(heights,commit)

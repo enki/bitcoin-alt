@@ -86,7 +86,7 @@ class Peer(threading.Thread):
             print("requesting genesis block")
             self.send_getdata([{'type':2,'hash':bitcoin.storage.genesis_hash}])
             self.send_getblocks([bitcoin.storage.genesis_hash])
-          self.send_getaddr()
+          #self.send_getaddr()
           
           heads = self.storage.heads()
           if heads:
@@ -120,9 +120,10 @@ class Peer(threading.Thread):
           if invs:
             self.send_getdata(invs)
             
-          heads = self.storage.heads()
-          if heads:
-            self.send_getblocks([head.hash for head in heads])
+          if len(payload) == 1:# this is sent after a full blocks request
+            heads = self.storage.heads()
+            if heads:
+              self.send_getblocks([head.hash for head in heads])
           print("inv end",time.time()-start)
         elif command == 'tx':
           print("tx")
@@ -145,9 +146,7 @@ class Peer(threading.Thread):
           for block in blocks:
             if block.hash == bitcoin.storage.genesis_hash:
               block.height = 1.0
-          s=time.time()
           self.storage.put_blocks(blocks)
-          print(time.time()-s)
           print("block end",time.time()-start)
         elif command == 'getdata':
           print("getdata")
