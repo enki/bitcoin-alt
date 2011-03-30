@@ -90,7 +90,7 @@ class Peer(threading.Thread):
           else:
             self.connect_blocks()
           finally:
-            self.send_getaddr()
+            #self.send_getaddr()
             pass
 
         elif command == 'addr':
@@ -134,13 +134,14 @@ class Peer(threading.Thread):
             command,payload = self.read_message()
           try:
             # TODO merge the transactions with whatever information we already have about the transaction everything is static except the block_hash which is write once
-            for transaction in transactions:
+              for transaction in transactions:
               self.session.merge(transaction)
           except IntegrityError:
             self.session.rollback()
             for transaction in transactions:
               self.session.merge(transaction)
-          self.session.commit()
+          finally:
+            self.session.commit()
           replay = (command,payload)
         elif command == 'block':
           print("block")
@@ -159,11 +160,7 @@ class Peer(threading.Thread):
               # TODO merge the blocks with whatever information we already have about the block, everything is static except the height of the block which is write once
               s=time.time()
               print("session.merge(block)")
-              if type(block.hash) is not bytes:
-                print("type(block.hash)",block.hash)
-              if type(block.prev_hash) is not bytes:
-                print("type(block.prev_hash)",block.prev_hash)
-              self.session.merge(block)
+                self.session.merge(block)
               print("session.merge(block) end",time.time()-s)
             print("merged ",time.time()-s1)
           except IntegrityError:# TODO this is kind of a race condition, overlapping block inserts could result in multiple IntegrityErrors
@@ -172,9 +169,10 @@ class Peer(threading.Thread):
               if block.hash == bitcoin.storage.genesis_hash:
                 block.height = 1.0
               self.session.merge(block)
-          s=time.time()
-          self.session.commit()
-          print("session.commit()",time.time()-s)
+          finally:
+            s=time.time()
+            self.session.commit()
+            print("session.commit()",time.time()-s)
           replay = (command,payload)
           print("block end",time.time()-start)
         elif command == 'getdata':

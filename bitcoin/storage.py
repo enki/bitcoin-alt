@@ -12,8 +12,8 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
 
 
-#engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True,connect_args={'timeout':5000})
-engine = create_engine('sqlite:///bitcoin.sqlite3',connect_args={'timeout':5000})
+engine = create_engine('sqlite:///bitcoin.sqlite3',echo=True,connect_args={'timeout':5000})
+#engine = create_engine('sqlite:///bitcoin.sqlite3',connect_args={'timeout':5000})
 #engine = create_engine('postgresql+psycopg2://bitcoin@localhost/bitcoin')
 metadata = MetaData()
 
@@ -37,9 +37,8 @@ transactions_table = Table('transactions',metadata,
 )
 
 transaction_inputs_table = Table('transaction_inputs',metadata,
-  Column('id',Integer,primary_key=True),
-  Column('output_hash',BINARY(32),index=True),
-  Column('output_index',Integer),
+  Column('output_hash',BINARY(32),primary_key=True),
+  Column('output_index',Integer,primary_key=True),
   Column('script',BINARY),
   Column('sequence',Integer),
   Column('position',Integer),
@@ -47,11 +46,10 @@ transaction_inputs_table = Table('transaction_inputs',metadata,
 )
 
 transaction_outputs_table = Table('transaction_outputs',metadata,
-  Column('id',Integer,primary_key=True),
   Column('value',BigInteger),
   Column('script',BINARY),
-  Column('position',Integer),
-  Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash')),
+  Column('position',Integer,primary_key=True),
+  Column('transaction_hash',BINARY(32),ForeignKey('transactions.hash'),primary_key=True),
 )
 
 metadata.create_all(engine)

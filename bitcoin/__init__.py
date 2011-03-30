@@ -14,6 +14,8 @@ class Block(object):
     self.nonce = nonce
     self.version = version
     
+    self.transactions = []
+    
   def target(self):
     return (self.bits & 0x00ffffff)*(2**(8*((self.bits >> 24) - 3)))
     
