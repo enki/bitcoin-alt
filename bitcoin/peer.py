@@ -88,9 +88,13 @@ class Peer(threading.Thread):
             self.send_getblocks([bitcoin.storage.genesis_hash])
           #self.send_getaddr()
           
-          heads = self.storage.heads()
-          if heads:
-            self.send_getblocks([head.hash for head in heads])
+          # attempt to connect disparate blocks
+          tails = self.storage.tails()
+          if tails:
+            heads = self.storage.heads()
+            if heads:
+              for tail in tails:
+                self.send_getblocks([head.hash for head in heads],tail.hash)
         elif command == 'addr':
           print("addr")
           for addr in payload:
@@ -119,34 +123,36 @@ class Peer(threading.Thread):
           
           if invs:
             self.send_getdata(invs)
-            
-          if len(payload) == 1:# this is sent after a full blocks request
-            heads = self.storage.heads()
-            if heads:
-              self.send_getblocks([head.hash for head in heads])
           print("inv end",time.time()-start)
         elif command == 'tx':
           print("tx")
-          transactions = [payload]
-          command,payload = self.read_message()
-          while command == 'tx':
-            transactions.append(payload)
-            command,payload = self.read_message()
-          replay = (command,payload)
-          self.storage.put_transactions(transactions)
+          #TODO verify transaction is valid
+          self.storage.put_transaction(payload)
         elif command == 'block':
           print("block")
           start = time.time()
           blocks = [payload]
           command,payload = self.read_message()
-          while command == 'block':
+          while command == 'block':# this works because an inv is sent immediately after the block list (always? TODO)
             blocks.append(payload)
             command,payload = self.read_message()
+            if self.shutdown.is_set():
+              return
           replay = (command,payload)
+          
           for block in blocks:
             if block.hash == bitcoin.storage.genesis_hash:
               block.height = 1.0
+          
           self.storage.put_blocks(blocks)
+          
+          # attempt to connect disparate blocks
+          tails = self.storage.tails()
+          if tails:
+            heads = self.storage.heads()
+            if heads:
+              for tail in tails:
+                self.send_getblocks([head.hash for head in heads],tail.hash)
           print("block end",time.time()-start)
         elif command == 'getdata':
           print("getdata")

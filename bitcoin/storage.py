@@ -17,6 +17,16 @@ create_statements = ["""CREATE TABLE IF NOT EXISTS blocks (
 	PRIMARY KEY (hash),
 	UNIQUE (prev_hash)
 );""",
+"""CREATE INDEX IF NOT EXISTS blocks_height ON blocks(height)""",
+"""CREATE TABLE IF NOT EXISTS transactions (
+	hash BINARY(32) NOT NULL,
+	version SMALLINT NOT NULL,
+	lock_time INTEGER NOT NULL,
+	position INTEGER,
+	block_hash BINARY(32),
+	PRIMARY KEY (hash), 
+	FOREIGN KEY(block_hash) REFERENCES blocks (hash)
+);""",
 """CREATE TABLE IF NOT EXISTS transaction_inputs (
 	output_hash BINARY(32) NOT NULL,
 	output_index INTEGER NOT NULL,
@@ -34,15 +44,6 @@ create_statements = ["""CREATE TABLE IF NOT EXISTS blocks (
 	transaction_hash BINARY(32) NOT NULL,
 	PRIMARY KEY (transaction_hash,position), 
 	FOREIGN KEY(transaction_hash) REFERENCES transactions (hash)
-);""",
-"""CREATE TABLE IF NOT EXISTS transactions (
-	hash BINARY(32) NOT NULL,
-	version SMALLINT NOT NULL,
-	lock_time INTEGER NOT NULL,
-	position INTEGER,
-	block_hash BINARY(32),
-	PRIMARY KEY (hash), 
-	FOREIGN KEY(block_hash) REFERENCES blocks (hash)
 );"""]
 
 genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
@@ -54,6 +55,7 @@ class Storage:
     self.db = sqlite3.connect('bitcoin.sqlite3')
     self.db.row_factory = sqlite3.Row
     self.db.execute('PRAGMA journal_mode=WAL;')
+    self.db.execute('PRAGMA temp_store=MEMORY;')
     
     for create_statement in create_statements:
       self.db.execute(create_statement)
@@ -80,14 +82,19 @@ class Storage:
     c = self.db.execute('SELECT * FROM blocks WHERE height IS NOT NULL AND hash NOT IN (SELECT prev_hash FROM blocks WHERE height IS NOT NULL)')
     return [bitcoin.Block(**block) for block in c.fetchall()]
     
+  def tails(self):
+    c = self.db.execute('SELECT * FROM blocks WHERE height IS NULL and prev_hash NOT IN (SELECT hash FROM blocks)')
+    return [bitcoin.Block(**block) for block in c.fetchall()]
+    
   def next_blocks(self,block):
     c = self.db.execute('SELECT * FROM blocks WHERE prev_hash=?',(block.hash,))
     return [bitcoin.Block(**block) for block in c.fetchall()]
     
   def put_blocks(self,blocks):
     for block in blocks:
-      self.db.execute('INSERT OR IGNORE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height) VALUES(?,?,?,?,?,?,?,?)',(block.hash,block.prev_hash,block.merkle_root,block.timestamp,block.bits,block.nonce,block.version,block.height))
-      #TODO set position
+      self.db.execute('INSERT OR REPLACE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height) VALUES(?,?,?,?,?,?,?,?)',(block.hash,block.prev_hash,block.merkle_root,block.timestamp,block.bits,block.nonce,block.version,block.height))
+      for transaction in block.transactions:
+        transaction.position = block.transactions.index(transaction)
       self.put_transactions(block.transactions,False)
     self.connect_blocks(False)
     self.db.commit()
@@ -138,7 +145,7 @@ class Storage:
     
   def put_transactions(self,transactions,commit=True):
     for transaction in transactions:
-      self.db.execute('INSERT OR IGNORE INTO transactions(hash,version,lock_time,position,block_hash) VALUES(?,?,?,?,?)',(transaction.hash,transaction.version,transaction.lock_time,transaction.position,transaction.block_hash))
+      self.db.execute('INSERT OR REPLACE INTO transactions(hash,version,lock_time,position,block_hash) VALUES(?,?,?,?,?)',(transaction.hash,transaction.version,transaction.lock_time,transaction.position,transaction.block_hash))
       for input in transaction.inputs:
         self.db.execute('INSERT OR IGNORE INTO transaction_inputs(output_hash,output_index,script,sequence,position,transaction_hash) VALUES(?,?,?,?,?,?)',(input.hash,input.index,input.script,input.sequence,transaction.inputs.index(input),transaction.hash))
       for output in transaction.outputs:
