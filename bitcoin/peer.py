@@ -97,6 +97,7 @@ class Peer(threading.Thread):
                 self.send_getblocks([head.hash for head in heads],tail.hash)
         elif command == 'addr':
           print("addr")
+          self.storage.put_addresses(payload)
           for addr in payload:
             self.peers.add((addr.addr,addr.port))
         elif command == 'inv':

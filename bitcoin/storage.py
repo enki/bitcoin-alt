@@ -44,6 +44,12 @@ create_statements = ["""CREATE TABLE IF NOT EXISTS blocks (
 	transaction_hash BINARY(32) NOT NULL,
 	PRIMARY KEY (transaction_hash,position), 
 	FOREIGN KEY(transaction_hash) REFERENCES transactions (hash)
+);""",
+"""CREATE TABLE IF NOT EXISTS addresses (
+  address NOT NULL,
+  port INTEGER NOT NULL,
+  services INTEGER NOT NULL,
+  PRIMARY KEY(address,port)
 );"""]
 
 genesis_hash = b'o\xe2\x8c\n\xb6\xf1\xb3r\xc1\xa6\xa2F\xaec\xf7O\x93\x1e\x83e\xe1Z\x08\x9ch\xd6\x19\x00\x00\x00\x00\x00'
@@ -59,6 +65,14 @@ class Storage:
     
     for create_statement in create_statements:
       self.db.execute(create_statement)
+    self.db.commit()
+    
+  def put_address(self,address):
+    self.put_addresses([address])
+  
+  def put_addresses(self,addresses):
+    for address in addresses:
+      self.db.execute('INSERT OR REPLACE INTO addresses(address,port,services) VALUES(?,?,?)',(address.addr,address.port,address.services))
     self.db.commit()
     
   def get_block(self,hash):
