@@ -1,6 +1,7 @@
 import threading
 import time
 import sqlite3
+import logging
 
 import bitcoin
 
