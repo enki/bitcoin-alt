@@ -2,6 +2,8 @@ import struct
 import socket
 import hashlib
 
+import bitcoin
+
 class buffer_builder:
   def __init__(self):
     self.buffer = b''
@@ -70,9 +72,9 @@ class buffer_builder:
     self.write(b'\x00'*(length-len(string)))
     
   def addr(self,address):
-    self.uint64(address['services'])
-    self.write(socket.inet_pton(socket.AF_INET6,address['addr']))
-    self.uint16(address['port'],little_endian=False)
+    self.uint64(address.services)
+    self.write(socket.inet_pton(socket.AF_INET6,address.addr))
+    self.uint16(address.port,little_endian=False)
     
   def inv(self,inv):
     if len(inv['hash']) != 32:
@@ -81,33 +83,30 @@ class buffer_builder:
     self.uint32(inv['type'])
     self.write(inv['hash'])
     
-  def outpoint(self,h,index):
-    if len(h) != 32:
+  def input(self,input):
+    if len(input.output_hash) != 32:
       raise Exception("hash length is wrong")
     
-    self.write(h)
-    self.uint32(index)
+    self.write(input.output_hash)
+    self.uint32(input.output_index)
+    self.var_uint(len(input.script))
+    self.write(input.script)
+    self.uint32(input.sequence)
     
-  def tx_in(self,outpoint,script,sequence):
-    self.outpoint(outpoint['out_hash'],outpoint['out_index'])
-    self.var_uint(len(script))
-    self.write(script)
-    self.uint32(sequence)
+  def output(self,output):
+    self.uint64(output.value)
+    self.var_uint(len(output.script))
+    self.write(output.script)
     
-  def tx_out(self,value,pk_script):
-    self.uint64(value)
-    self.var_uint(len(pk_script))
-    self.write(pk_script)
-    
-  def tx(self,version,tx_ins,tx_outs,lock_time):
-    self.uint32(version)
-    self.var_uint(len(tx_ins))
-    for tx_in in tx_ins:
-      self.tx_in(tx_in['outpoint'],tx_in['script'],tx_in['sequence'])
-    self.var_uint(len(tx_outs))
-    for tx_out in tx_outs:
-      self.tx_out(tx_out['value'],tx_out['pk_script'])
-    self.uint32(lock_time)
+  def transaction(self,transaction):
+    self.uint32(transaction.version)
+    self.var_uint(len(transaction.inputs))
+    for tx_in in transaction.inputs:
+      self.input(tx_in)
+    self.var_uint(len(transaction.outputs))
+    for tx_out in transaction.outputs:
+      self.output(tx_out)
+    self.uint32(transaction.lock_time)
     
 def version(version,
             services,
@@ -184,21 +183,21 @@ def getheaders(version,starts,stop):
   b.write(stop)
   return b.buffer
   
-def tx(version,tx_ins,tx_outs,lock_time):
+def transaction(transaction):
   b = buffer_builder()
-  b.tx(version,tx_ins,tx_outs,lock_time)
+  b.transaction(transaction)
   return b.buffer
   
-def block(version,prev_hash,merkle_root,timestamp,bits,nonce,txs):
+def block(block):
   b = buffer_builder()
-  b.uint32(version)
-  b.write(prev_hash)
-  b.write(merkle_root)
-  b.uint32(timestamp)
-  b.uint32(bits)
-  b.write(nonce)
-  for tx in txs:
-    b.tx(*tx)
+  b.uint32(block.version)
+  b.write(block.prev_hash)
+  b.write(block.merkle_root)
+  b.uint32(block.timestamp)
+  b.uint32(block.bits)
+  b.write(block.nonce)
+  for tx in block.transactions:
+    b.transaction(tx)
   return b.buffer
 
 class buffer_parser:
@@ -270,7 +269,7 @@ class buffer_parser:
     services = self.uint64()
     addr = socket.inet_ntop(socket.AF_INET6,self.read(16))
     port = self.uint16(False)
-    return {'services':services,'addr':addr,'port':port}
+    return bitcoin.Address(addr,port,services)
     
   def inv_vect(self):
     inv_type = self.uint32()
@@ -335,27 +334,27 @@ class parser:
     return ret
     
   def parse_verack(self):
-    return {}
+    return None
     
   def parse_addr(self):
     count = self.helper.var_uint()
     addrs = []
     for x in range(count):
       if self.version >= 31402:
-        timestamp = self.helper.uint32(4)
-        node_addr = self.helper.addr()
-        addrs.append({'timestamp':timestamp,'node_addr':node_addr})
+        timestamp = self.helper.uint32()
+        addr = self.helper.addr()
+        addrs.append(addr)
       else:
-        node_addr = self.helper.addr()
-        addrs.append({'node_addr':node_addr})
-    return {'addrs':addrs}
+        addr = self.helper.addr()
+        addrs.append(addr)
+    return addrs
     
   def parse_inv(self):
     count = self.helper.var_uint()
     invs = []
     for x in range(count):
       invs.append(self.helper.inv_vect())
-    return {'invs':invs}
+    return invs
     
   def parse_getblocks(self):
     version = self.helper.uint32()
@@ -365,26 +364,23 @@ class parser:
       starts.append(self.helper.read(32))
     stop = self.helper.read(32)
     return {'version':version,'starts':starts,'stop':stop}
-    
-  def parse_outpoint(self):
-    out_hash = self.helper.read(32)
-    out_index = self.helper.uint32()
-    return {'out_hash':out_hash,'out_index':out_index}
 
   def parse_txin(self):
-    outpoint = self.parse_outpoint()
+    out_hash = self.helper.read(32)
+    out_index = self.helper.uint32()
     script_length = self.helper.var_uint()
     script = self.helper.read(script_length)
     sequence = self.helper.uint32()
-    return {'outpoint':outpoint,'script':script,'sequence':sequence}
+    return bitcoin.TransactionInput(out_hash,out_index,script,sequence)
     
   def parse_txout(self):
     value = self.helper.uint64()
-    pk_script_length = self.helper.var_uint()
-    pk_script = self.helper.read(pk_script_length)
-    return {'value':value,'pk_script':pk_script}
+    script_length = self.helper.var_uint()
+    script = self.helper.read(script_length)
+    return bitcoin.TransactionOutput(value,script)
     
   def parse_tx(self):
+    start = self.helper.offset
     version = self.helper.uint32()
     tx_in_count = self.helper.var_uint()
     tx_ins = []
@@ -396,24 +392,19 @@ class parser:
       tx_outs.append(self.parse_txout())
     lock_time = self.helper.uint32()
     
-    h = hashlib.sha256(
-          hashlib.sha256(
-            tx(
-              version,
-              tx_ins,
-              tx_outs,
-              lock_time
-            )
-          ).digest()
-        ).digest()
+    end = self.helper.offset
     
-    return {'hash':h,
-            'version':version,
-            'tx_ins':tx_ins,
-            'tx_outs':tx_outs,
-            'lock_time':lock_time}
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer[start:end]).digest()).digest()
+    
+    t = bitcoin.Transaction(h,version,lock_time)
+    for tx_in in tx_ins:
+      t.inputs.append(tx_in)
+    for tx_out in tx_outs:
+      t.outputs.append(tx_out)
+    return t
 
   def parse_block(self):
+    h = hashlib.sha256(hashlib.sha256(self.helper.buffer[:4+32+32+4+4+4]).digest()).digest()
     version = self.helper.uint32()
     prev_hash = self.helper.read(32)
     merkle_root = self.helper.read(32)
@@ -425,31 +416,14 @@ class parser:
     for x in range(tx_count):
       txs.append(self.parse_tx())
     
-    h = hashlib.sha256(
-          hashlib.sha256(
-            block(
-              version,
-              prev_hash,
-              merkle_root,
-              timestamp,
-              bits,
-              nonce,
-              []
-            )
-          ).digest()
-        ).digest()
+    b = bitcoin.Block(h,prev_hash,merkle_root,timestamp,bits,nonce,version)
+    for tx in txs:
+      b.transactions.append(tx)
       
-    return {'hash':h,
-            'version':version,
-            'prev_hash':prev_hash,
-            'merkle_root':merkle_root,
-            'timestamp':timestamp,
-            'bits':bits,
-            'nonce':nonce,
-            'txs':txs}
+    return b
     
   def parse_getaddr(self):
-    return {}
+    return None
     
   def parse_checkorder(self):
     return False
@@ -461,7 +435,7 @@ class parser:
     return False
   
   def parse_ping(self):
-    return {}
+    return None
     
   def parse_alert(self):
     message = self.helper.string()
