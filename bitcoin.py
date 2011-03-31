@@ -12,7 +12,7 @@ static_peers = [("::ffff:174.120.185.74",8333),("::ffff:193.25.1.157",8333)]
 shutdown = threading.Event()
 shutdown.clear()
 
-peers = bitcoin.peers.Peers(shutdown)
+peers = bitcoin.peers.Peers(shutdown,1)
 peers.start()
 
 for peer in static_peers:

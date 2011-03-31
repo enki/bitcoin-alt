@@ -133,19 +133,27 @@ class Peer(threading.Thread):
           print("block")
           start = time.time()
           blocks = [payload]
-          command,payload = self.read_message()
-          while command == 'block':# this works because an inv is sent immediately after the block list (always? TODO)
-            blocks.append(payload)
+          self.socket.settimeout(1)
+          try:
             command,payload = self.read_message()
-            if self.shutdown.is_set():
-              return
-          replay = (command,payload)
+            while command == 'block':
+              blocks.append(payload)
+              command,payload = self.read_message()
+              if self.shutdown.is_set():
+                return
+            replay = (command,payload)
+          except socket.timeout:
+            pass
+          finally:
+            self.socket.settimeout(30)
           
           for block in blocks:
             if block.hash == bitcoin.storage.genesis_hash:
               block.height = 1.0
           
+          s=time.time()
           self.storage.put_blocks(blocks)
+          print("put_blocks",time.time()-s)
           
           # attempt to connect disparate blocks
           tails = self.storage.tails()
