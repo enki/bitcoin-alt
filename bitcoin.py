@@ -19,7 +19,7 @@ if '-dd' in sys.argv[1:]:
 shutdown = threading.Event()
 shutdown.clear()
 
-peers = bitcoin.peers.Peers(shutdown)
+peers = bitcoin.peers.Peers(shutdown,1)
 peers.start()
 
 for peer in static_peers:
