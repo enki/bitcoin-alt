@@ -69,120 +69,141 @@ class Storage:
       self.db.execute(create_statement)
     self.db.commit()
     
+    self.sqlite3_lock = threading.RLock()
+    
   def put_address(self,address):
-    self.put_addresses([address])
+    with self.sqlite3_lock:
+      self.put_addresses([address])
   
   def put_addresses(self,addresses):
-    for address in addresses:
-      self.db.execute('INSERT OR REPLACE INTO addresses(address,port,services) VALUES(?,?,?)',(address.addr,address.port,address.services))
-    self.db.commit()
+    with self.sqlite3_lock:
+      for address in addresses:
+        self.db.execute('INSERT OR REPLACE INTO addresses(address,port,services) VALUES(?,?,?)',(address.addr,address.port,address.services))
+      self.db.commit()
     
   def get_block(self,hash):
-    blocks = self.get_blocks((hash,))
-    if len(blocks) == 1:
-      return blocks[0]
-    else:
-      return None
+    with self.sqlite3_lock:
+      blocks = self.get_blocks((hash,))
+      if len(blocks) == 1:
+        return blocks[0]
+      else:
+        return None
   
   def get_blocks(self,hashes):
-    blocks = []
-    for hash in hashes:
-      c = self.db.execute('SELECT * FROM blocks WHERE hash=?',(hash,))
-      row = c.fetchone()
-      if row:
-        block = bitcoin.Block(**row)
-        c = self.db.execute('SELECT hash FROM transactions WHERE block_hash=? ORDER BY position',(block.hash,))
-        rows = c.fetchall()
-        if rows:
-          transaction_hashes = [row['hash'] for row in rows]
-          block.transactions = self.get_transactions(transaction_hashes)
-        blocks.append(block)
-    return blocks
+    with self.sqlite3_lock:
+      blocks = []
+      for hash in hashes:
+        c = self.db.execute('SELECT * FROM blocks WHERE hash=?',(hash,))
+        row = c.fetchone()
+        if row:
+          block = bitcoin.Block(**row)
+          c = self.db.execute('SELECT hash FROM transactions WHERE block_hash=? ORDER BY position',(block.hash,))
+          rows = c.fetchall()
+          if rows:
+            transaction_hashes = [row['hash'] for row in rows]
+            block.transactions = self.get_transactions(transaction_hashes)
+          blocks.append(block)
+      return blocks
     
   def heads(self):
-    c = self.db.execute('SELECT * FROM blocks WHERE height IS NOT NULL AND hash NOT IN (SELECT prev_hash FROM blocks WHERE height IS NOT NULL)')
-    return [bitcoin.Block(**block) for block in c.fetchall()]
+    with self.sqlite3_lock:
+      c = self.db.execute('SELECT * FROM blocks WHERE height IS NOT NULL AND hash NOT IN (SELECT prev_hash FROM blocks WHERE height IS NOT NULL)')
+      return [bitcoin.Block(**block) for block in c.fetchall()]
     
   def tails(self):
-    c = self.db.execute('SELECT * FROM blocks WHERE height IS NULL and prev_hash NOT IN (SELECT hash FROM blocks)')
-    return [bitcoin.Block(**block) for block in c.fetchall()]
+    with self.sqlite3_lock:
+      c = self.db.execute('SELECT * FROM blocks WHERE height IS NULL and prev_hash NOT IN (SELECT hash FROM blocks)')
+      return [bitcoin.Block(**block) for block in c.fetchall()]
     
   def next_blocks(self,block):
-    c = self.db.execute('SELECT * FROM blocks WHERE prev_hash=?',(block.hash,))
-    return [bitcoin.Block(**block) for block in c.fetchall()]
+    with self.sqlite3_lock:
+      c = self.db.execute('SELECT * FROM blocks WHERE prev_hash=?',(block.hash,))
+      return [bitcoin.Block(**block) for block in c.fetchall()]
     
   def put_blocks(self,blocks):
-    for block in blocks:
-      self.db.execute('INSERT OR REPLACE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height) VALUES(?,?,?,?,?,?,?,?)',(block.hash,block.prev_hash,block.merkle_root,block.timestamp,block.bits,block.nonce,block.version,block.height))
-      for transaction in block.transactions:
-        transaction.block_hash = block.hash
-        transaction.position = block.transactions.index(transaction)
-      self.put_transactions(block.transactions,False)
-    self.connect_blocks(False)
-    self.db.commit()
+    with self.sqlite3_lock:
+      for block in blocks:
+        self.db.execute('INSERT OR REPLACE INTO blocks(hash,prev_hash,merkle_root,timestamp,bits,nonce,version,height) VALUES(?,?,?,?,?,?,?,?)',(block.hash,block.prev_hash,block.merkle_root,block.timestamp,block.bits,block.nonce,block.version,block.height))
+        for transaction in block.transactions:
+          transaction.block_hash = block.hash
+          transaction.position = block.transactions.index(transaction)
+        self.put_transactions(block.transactions,False)
+      self.connect_blocks(False)
+      s=time.time()
+      print("db.commit()")
+      self.db.commit()
+      print("db.commit()",time.time()-s)
     
   def put_block(self,block):
-    self.put_blocks([block])
+    with self.sqlite3_lock:
+      self.put_blocks([block])
     
   def set_height(self,hash,height):
-    self.set_heights([(height,hash)])
+    with self.sqlite3_lock:
+      self.set_heights([(height,hash)])
     
   def set_heights(self,heights,commit=True):# heights = [(height,hash)]
-    self.db.executemany('UPDATE blocks SET height=? WHERE hash=?',heights)
-    if commit:
-      self.db.commit()
+    with self.sqlite3_lock:
+      self.db.executemany('UPDATE blocks SET height=? WHERE hash=?',heights)
+      if commit:
+        self.db.commit()
     
   def get_transaction(self,hash):
-    transactions = self.get_transactions([hash])
-    if len(transactions) == 1:
-      return transactions[0]
-    else:
-      return None
+    with self.sqlite3_lock:
+      transactions = self.get_transactions([hash])
+      if len(transactions) == 1:
+        return transactions[0]
+      else:
+        return None
     
   def get_transactions(self,hashes):
-    transactions = []
-    for hash in hashes:
-      c = self.db.execute('SELECT * FROM transactions WHERE hash=?',(hash,))
-      row = c.fetchone()
-      if row:
-        transaction = bitcoin.Transaction(row['hash'],row['version'],row['lock_time'])
-        
-        c = self.db.execute('SELECT * FROM transaction_inputs WHERE transaction_hash=? ORDER BY position',(transaction.hash,))
-        rows = c.fetchall()
-        for row in rows:
-          input = bitcoin.TransactionInput(row['output_hash'],row['output_index'],row['script'],row['sequence'])
-          transaction.inputs.append(input)
-        
-        c = self.db.execute('SELECT * FROM transaction_outputs WHERE transaction_hash=? ORDER BY position',(transaction.hash,))
-        rows = c.fetchall()
-        for row in rows:
-          output = bitcoin.TransactionOutput(row['value'],row['script'])
-          transaction.outputs.append(output)        
-        transactions.append(transaction)
-    return transactions
+    with self.sqlite3_lock:
+      transactions = []
+      for hash in hashes:
+        c = self.db.execute('SELECT * FROM transactions WHERE hash=?',(hash,))
+        row = c.fetchone()
+        if row:
+          transaction = bitcoin.Transaction(row['hash'],row['version'],row['lock_time'])
+          
+          c = self.db.execute('SELECT * FROM transaction_inputs WHERE transaction_hash=? ORDER BY position',(transaction.hash,))
+          rows = c.fetchall()
+          for row in rows:
+            input = bitcoin.TransactionInput(row['output_hash'],row['output_index'],row['script'],row['sequence'])
+            transaction.inputs.append(input)
+          
+          c = self.db.execute('SELECT * FROM transaction_outputs WHERE transaction_hash=? ORDER BY position',(transaction.hash,))
+          rows = c.fetchall()
+          for row in rows:
+            output = bitcoin.TransactionOutput(row['value'],row['script'])
+            transaction.outputs.append(output)        
+          transactions.append(transaction)
+      return transactions
   
   def put_transaction(self,transaction,commit=True):
-    self.put_transactions([transaction],commit)
+    with self.sqlite3_lock:
+      self.put_transactions([transaction],commit)
   
   def put_transactions(self,transactions,commit=True):
-    for transaction in transactions:
-      self.db.execute('INSERT OR REPLACE INTO transactions(hash,version,lock_time,position,block_hash) VALUES(?,?,?,?,?)',(transaction.hash,transaction.version,transaction.lock_time,transaction.position,transaction.block_hash))
-      for input in transaction.inputs:
-        self.db.execute('INSERT OR IGNORE INTO transaction_inputs(output_hash,output_index,script,sequence,position,transaction_hash) VALUES(?,?,?,?,?,?)',(input.hash,input.index,input.script,input.sequence,transaction.inputs.index(input),transaction.hash))
-      for output in transaction.outputs:
-        self.db.execute('INSERT OR IGNORE INTO transaction_outputs(value,script,position,transaction_hash) VALUES(?,?,?,?)',(output.value,output.script,transaction.outputs.index(output),transaction.hash))
-    if commit:
-      self.db.commit()
+    with self.sqlite3_lock:
+      for transaction in transactions:
+        self.db.execute('INSERT OR REPLACE INTO transactions(hash,version,lock_time,position,block_hash) VALUES(?,?,?,?,?)',(transaction.hash,transaction.version,transaction.lock_time,transaction.position,transaction.block_hash))
+        for input in transaction.inputs:
+          self.db.execute('INSERT OR IGNORE INTO transaction_inputs(output_hash,output_index,script,sequence,position,transaction_hash) VALUES(?,?,?,?,?,?)',(input.hash,input.index,input.script,input.sequence,transaction.inputs.index(input),transaction.hash))
+        for output in transaction.outputs:
+          self.db.execute('INSERT OR IGNORE INTO transaction_outputs(value,script,position,transaction_hash) VALUES(?,?,?,?)',(output.value,output.script,transaction.outputs.index(output),transaction.hash))
+      if commit:
+        self.db.commit()
     
   def connect_blocks(self,commit=True):
-    heads = self.heads()
-    heights = []
-    while heads:
-      head = heads.pop()
-      next_blocks = self.next_blocks(head)
-      if next_blocks:
-        for next_block in next_blocks:
-          next_block.height = head.height + next_block.difficulty()
-          heights.append((next_block.height,next_block.hash))
-          heads.append(next_block)
-    self.set_heights(heights,commit)
+    with self.sqlite3_lock:
+      heads = self.heads()
+      heights = []
+      while heads:
+        head = heads.pop()
+        next_blocks = self.next_blocks(head)
+        if next_blocks:
+          for next_block in next_blocks:
+            next_block.height = head.height + next_block.difficulty()
+            heights.append((next_block.height,next_block.hash))
+            heads.append(next_block)
+      self.set_heights(heights,commit)

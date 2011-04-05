@@ -23,7 +23,7 @@ class reader:
   def read(self):
     m = self.buffered_read(4)
     if m != magic:
-      raise Exception("Magic value wrong")
+      raise Exception("Magic value wrong "+str(m))
     
     command = self.buffered_read(12).decode('ascii').strip('\x00')
     length = struct.unpack('<I',self.buffered_read(struct.calcsize('<I')))[0]

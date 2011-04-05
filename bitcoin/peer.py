@@ -16,7 +16,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError,OperationalError
 
 class Peer(threading.Thread):
-  def __init__(self,address,peers,shutdown,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
+  def __init__(self,address,peers,shutdown,storage,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
     super(Peer,self).__init__()
     
     self.address = address
@@ -107,6 +107,7 @@ class Peer(threading.Thread):
           transaction_hashs = [inv['hash'] for inv in payload if inv['type'] == 1]
           invs = []
           
+          print("block_hashs")
           if block_hashs:
             # TODO this should include the transactions associated with the blocks
             blocks = self.storage.get_blocks(block_hashs)
@@ -115,8 +116,11 @@ class Peer(threading.Thread):
             if block_hashs:
               invs.extend([{'type':2,'hash':block_hash} for block_hash in block_hashs])
           
+          print("transaction_hashs")
           if transaction_hashs:
+            s=time.time()
             transactions = self.storage.get_transactions(transaction_hashs)
+            print(time.time()-s)
             for transaction in transactions:
               transaction_hashs.remove(transaction.hash)
             if transaction_hashs:
@@ -135,10 +139,16 @@ class Peer(threading.Thread):
           blocks = [payload]
           self.socket.settimeout(1)
           try:
+            s=time.time()
+            print("read_message")
             command,payload = self.read_message()
+            print(time.time()-s)
             while command == 'block':
               blocks.append(payload)
+              s=time.time()
+              print("read_message")
               command,payload = self.read_message()
+              print(time.time()-s)
               if self.shutdown.is_set():
                 return
             replay = (command,payload)
@@ -152,6 +162,7 @@ class Peer(threading.Thread):
               block.height = 1.0
           
           s=time.time()
+          print("putting",len(blocks),"blocks")
           self.storage.put_blocks(blocks)
           print("put_blocks",time.time()-s)
           
@@ -186,9 +197,14 @@ class Peer(threading.Thread):
           
   def read_message(self):
     try:
+      s=time.time()
       command,raw_payload = self.reader.read()
+      print("read()",time.time()-s)
+      s=time.time()
       payload = self.parser.parse(command,raw_payload)
+      print("parse()",time.time()-s)
     except socket.timeout:
+      print("timeout")
       self.send_ping()
       return self.read_message()
     return (command,payload)
