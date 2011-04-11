@@ -134,8 +134,6 @@ class script_runner:
   def run(self):
     self.next_op()
     while self.current_op:
-      print(self.current_op)
-      print(self.stack)
       {'OP_PUSH':self.push,
       'OP_DUP':self.dup,
       'OP_HASH160':self.hash160,
@@ -170,11 +168,13 @@ class script_runner:
     self.next_op()
     
   def checksig(self):
+    pubkey = self.stack.pop()
     sig = self.stack.pop()
     sigtype = sig[-1]
     sig = sig[:-1]
-    print(sigtype)
+    print(pubkey)
     print(sig)
+    print(sigtype)
 
 class script_parser:
   def __init__(self,script):
