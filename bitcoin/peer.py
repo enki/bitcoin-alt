@@ -68,7 +68,12 @@ class Peer(threading.Thread):
           command,payload = replay
           replay = None
         else:
-          command,payload = self.read_message()
+          try:
+            command,payload = self.read_message()
+          except socket.timeout:
+            print("timeout")
+            self.send_ping()
+            return self.read_message()
         
         self.last_seen = time.time()
         
@@ -196,17 +201,12 @@ class Peer(threading.Thread):
           return
           
   def read_message(self):
-    try:
-      s=time.time()
-      command,raw_payload = self.reader.read()
-      print("read()",time.time()-s)
-      s=time.time()
-      payload = self.parser.parse(command,raw_payload)
-      print("parse()",time.time()-s)
-    except socket.timeout:
-      print("timeout")
-      self.send_ping()
-      return self.read_message()
+    s=time.time()
+    command,raw_payload = self.reader.read()
+    print("read()",time.time()-s)
+    s=time.time()
+    payload = self.parser.parse(command,raw_payload)
+    print("parse()",time.time()-s)
     return (command,payload)
   
   def send_version(self):
