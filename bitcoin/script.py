@@ -135,10 +135,12 @@ class script_runner:
     self.next_op()
     while self.current_op:
       print(self.current_op)
+      print(self.stack)
       {'OP_PUSH':self.push,
       'OP_DUP':self.dup,
       'OP_HASH160':self.hash160,
       'OP_EQUALVERIFY':self.equalverify,
+      'OP_CHECKSIG':self.checksig,
       }[self.current_op[0]]()
     
   def push(self):
@@ -153,14 +155,26 @@ class script_runner:
     
   def hash160(self):
     item = self.stack.pop()
-    self.stack.append(hashlib.sha256(hashlib.sha256(item).digest()).digest())
+    ripemd160 = hashlib.new('ripemd160')
+    sha256 = hashlib.new('sha256')
+    sha256.update(item)
+    ripemd160.update(sha256.digest())
+    self.stack.append(ripemd160.digest())
     self.next_op()
     
   def equalverify(self):
     a = self.stack.pop()
     b = self.stack.pop()
-    self.stack.append(a==b)
+    if a != b:
+      raise Exception("script is invalid")
     self.next_op()
+    
+  def checksig(self):
+    sig = self.stack.pop()
+    sigtype = sig[-1]
+    sig = sig[:-1]
+    print(sigtype)
+    print(sig)
 
 class script_parser:
   def __init__(self,script):
