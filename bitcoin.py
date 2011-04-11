@@ -4,8 +4,11 @@ import logging
 import sys
 import threading
 import time
+import os
 
 import bitcoin.peers
+
+os.nice(5)
 
 static_peers = [("::ffff:174.120.185.74",8333),("::ffff:193.25.1.157",8333)]
 
