@@ -1,4 +1,5 @@
 import struct
+import hashlib
 
 opcodes = {0:"0",
 76:"OP_PUSHDATA1",
@@ -114,7 +115,52 @@ opcodes = {0:"0",
 254:"OP_PUBKEY",
 }
 
-
+def run(script):
+  runner = script_runner(script)
+  runner.run()
+  
+class script_runner:
+  def __init__(self,script):
+    self.script = script
+    self.parsed = parse(script)
+    
+    self.stack = []
+    self.offset = 0
+  
+  def next_op(self):
+    self.current_op = self.parsed[self.offset]
+    self.offset += 1
+  
+  def run(self):
+    self.next_op()
+    while self.current_op:
+      print(self.current_op)
+      {'OP_PUSH':self.push,
+      'OP_DUP':self.dup,
+      'OP_HASH160':self.hash160,
+      'OP_EQUALVERIFY':self.equalverify,
+      }[self.current_op[0]]()
+    
+  def push(self):
+    self.stack.append(self.current_op[1])
+    self.next_op()
+    
+  def dup(self):
+    item = self.stack.pop()
+    self.stack.append(item)
+    self.stack.append(item)
+    self.next_op()
+    
+  def hash160(self):
+    item = self.stack.pop()
+    self.stack.append(hashlib.sha256(hashlib.sha256(item).digest()).digest())
+    self.next_op()
+    
+  def equalverify(self):
+    a = self.stack.pop()
+    b = self.stack.pop()
+    self.stack.append(a==b)
+    self.next_op()
 
 class script_parser:
   def __init__(self,script):
