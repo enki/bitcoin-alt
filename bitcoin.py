@@ -5,12 +5,20 @@ import sys
 import threading
 import time
 import os
+import socket
 
 import bitcoin.peers
 
 os.nice(5)
 
-static_peers = [("::ffff:174.120.185.74",8333),("::ffff:193.25.1.157",8333)]
+static_peers = [('::ffff:'+sockaddr[0],sockaddr[1]) for family,socktype,proto,canonname,sockaddr in socket.getaddrinfo("bitseed.bitcoin.org.uk",8333,socket.AF_INET)]
+try:
+  static_peers.extend([sockaddr for family,socktype,proto,canonname,sockaddr in socket.getaddrinfo("bitseed.bitcoin.org.uk",8333,socket.AF_INET6)])
+except socket.gaierror as e:
+  if e.errno == -2:
+    pass
+  else:
+    raise e
 
 logging.basicConfig()
 logger = logging.getLogger('')

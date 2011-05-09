@@ -10,11 +10,6 @@ import bitcoin.net.message
 import bitcoin.net.payload
 import bitcoin.storage
 
-from sqlalchemy.sql.expression import not_
-from sqlalchemy.orm import mapper,relationship, scoped_session, sessionmaker
-from sqlalchemy.orm.exc import NoResultFound
-from sqlalchemy.exc import IntegrityError,OperationalError
-
 class Peer(threading.Thread):
   def __init__(self,address,peers,shutdown,storage,addr_me=bitcoin.Address('::ffff:127.0.0.1',8333,1),my_version=32002,my_services=1):
     super(Peer,self).__init__()
