@@ -15,7 +15,7 @@ static_peers = [('::ffff:'+sockaddr[0],sockaddr[1]) for family,socktype,proto,ca
 try:
   static_peers.extend([sockaddr for family,socktype,proto,canonname,sockaddr in socket.getaddrinfo("bitseed.bitcoin.org.uk",8333,socket.AF_INET6)])
 except socket.gaierror as e:
-  if e.errno == -2:
+  if e.errno in (-2,8):
     pass
   else:
     raise e
